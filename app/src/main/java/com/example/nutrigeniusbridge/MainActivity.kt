@@ -370,6 +370,20 @@ class MainActivity : ComponentActivity() {
                             return true
                         }
 
+                        // Solo immagini richieste: il selettore di foto di Android
+                        // (galleria e album), non il gestore dei file.
+                        val tipi = fileChooserParams?.acceptTypes?.filter { it.isNotBlank() } ?: emptyList()
+                        val soloImmagini = tipi.isNotEmpty() && tipi.all { it.startsWith("image/") || it.startsWith(".jp") || it.startsWith(".png") || it.startsWith(".webp") }
+                        if (soloImmagini) {
+                            val multiplo = fileChooserParams?.mode == android.webkit.WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+                            val galleria = android.content.Intent(android.provider.MediaStore.ACTION_PICK_IMAGES).apply {
+                                type = "image/*"
+                                if (multiplo) putExtra(android.provider.MediaStore.EXTRA_PICK_IMAGES_MAX, android.provider.MediaStore.getPickImagesMaxLimit())
+                            }
+                            fileChooserLauncher.launch(galleria)
+                            return true
+                        }
+
                         val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(android.content.Intent.CATEGORY_OPENABLE)
                             type = "*/*"
