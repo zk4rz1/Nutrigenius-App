@@ -487,10 +487,18 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (!chiedeScatto(intent)) return
-        if (paginaCaricata) {
-            webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('nutrigenius-scatta'))", null)
-        } else {
+        if (!paginaCaricata) {
             webView.loadUrl(BuildConfig.WEBAPP_URL + "?scatta=1")
+            return
+        }
+        // La PWA aggiornata espone window.__nutrigeniusScatta e risponde 'ok';
+        // una versione più vecchia no, e allora si ricarica con ?scatta=1, che
+        // capisce comunque. Così la scorciatoia funziona in ogni caso.
+        webView.evaluateJavascript(
+            "(function(){ if (window.__nutrigeniusScatta) { window.__nutrigeniusScatta(); return 'ok'; } " +
+                "window.dispatchEvent(new CustomEvent('nutrigenius-scatta')); return 'evento'; })()"
+        ) { esito ->
+            if (esito != "\"ok\"") webView.loadUrl(BuildConfig.WEBAPP_URL + "?scatta=1")
         }
     }
 
