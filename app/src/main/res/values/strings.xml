@@ -1,2 +1,4 @@
 <resources>
+    <string name="scorciatoia_scatta_breve">Scatta foto</string>
+    <string name="scorciatoia_scatta_lunga">Scatta foto per l\'assistente</string>
 </resources>

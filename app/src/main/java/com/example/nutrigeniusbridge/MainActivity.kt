@@ -18,7 +18,15 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        /** Extra dell'intent con cui la scorciatoia «Scatta foto» chiede alla PWA di aprire la fotocamera. */
+        const val EXTRA_AZIONE = "azione"
+        const val AZIONE_SCATTA = "scatta"
+        private const val ID_SCORCIATOIA_SCATTA = "scatta"
+    }
+
     private lateinit var webView: WebView
+    private var paginaCaricata = false
     private lateinit var healthConnectManager: HealthConnectManager
     private lateinit var webAppInterface: HealthConnectWebAppInterface
     private lateinit var errorManager: ErrorManager
@@ -166,6 +174,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    paginaCaricata = true
                     val js = """
                         javascript:(function() {
                             var lastAction = '';
@@ -440,8 +449,49 @@ class MainActivity : ComponentActivity() {
             }
         })
 
-        // Load the PWA
-        webView.loadUrl(BuildConfig.WEBAPP_URL)
+        registraScorciatoie()
+
+        // Load the PWA: dalla scorciatoia «Scatta foto» parte direttamente con
+        // la fotocamera (la PWA riconosce ?scatta=1 come la sua scorciatoia).
+        webView.loadUrl(if (chiedeScatto(intent)) BuildConfig.WEBAPP_URL + "?scatta=1" else BuildConfig.WEBAPP_URL)
+    }
+
+    /**
+     * La scorciatoia «Scatta foto» (pressione lunga sull'icona, trascinabile in
+     * Home): dinamica e non in XML, così il pacchetto di destinazione è quello
+     * giusto anche per il flavor dev, che ha il suffisso .dev.
+     */
+    private fun registraScorciatoie() {
+        try {
+            val intent = android.content.Intent(this, MainActivity::class.java).apply {
+                action = android.content.Intent.ACTION_VIEW
+                putExtra(EXTRA_AZIONE, AZIONE_SCATTA)
+            }
+            val scorciatoia = androidx.core.content.pm.ShortcutInfoCompat.Builder(this, ID_SCORCIATOIA_SCATTA)
+                .setShortLabel(getString(R.string.scorciatoia_scatta_breve))
+                .setLongLabel(getString(R.string.scorciatoia_scatta_lunga))
+                .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.drawable.ic_shortcut_scatta))
+                .setIntent(intent)
+                .build()
+            androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, listOf(scorciatoia))
+        } catch (e: Exception) {
+            errorManager.logError("Scorciatoia non registrata", e.stackTraceToString(), "AndroidNative", false)
+        }
+    }
+
+    private fun chiedeScatto(intent: android.content.Intent?): Boolean =
+        intent?.getStringExtra(EXTRA_AZIONE) == AZIONE_SCATTA
+
+    /** L'app era già aperta: alla PWA basta un evento, senza ricaricare la pagina. */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (!chiedeScatto(intent)) return
+        if (paginaCaricata) {
+            webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('nutrigenius-scatta'))", null)
+        } else {
+            webView.loadUrl(BuildConfig.WEBAPP_URL + "?scatta=1")
+        }
     }
 
     fun requestSpecificPermissions(recordNames: List<String>, callbackFunctionName: String?) {

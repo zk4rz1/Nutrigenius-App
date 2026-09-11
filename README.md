@@ -10,6 +10,7 @@ Questa applicazione è un wrapper Android per la PWA di Nutrigenius. Ha lo scopo
 - **Supporto Dual-Environment (Flavors)**: L'app è progettata con due flavor Gradle, **Dev** (per l'ambiente di sviluppo e testing) e **Prod** (per l'applicazione web di produzione).
 - **Notifiche Locali e Allarmi**: Abilita le notifiche push locali per l'app in background (ad esempio per i promemoria di idratazione o l'inserimento dei pasti).
 - **Esportazione file e Appunti**: Consente il download locale di file Blob generati dalla PWA, l'esportazione di JSON, e l'accesso agli appunti (clipboard) nativi del dispositivo.
+- **Scorciatoia «Scatta foto»** (dalla 1.1): tenendo premuta l'icona dell'app compare la voce «Scatta foto per l'assistente», che si può trascinare nella Home come icona a sé. Apre la PWA su `?scatta=1` (o, se l'app è già aperta, le manda l'evento `nutrigenius-scatta` senza ricaricare): la PWA sceglie il pasto dall'ora, apre la chat con l'assistente IA e subito la fotocamera a raffica. La scorciatoia è registrata dal codice (`ShortcutManagerCompat`), così il pacchetto di destinazione è giusto anche per il flavor *dev* (suffisso `.dev`). `MainActivity` è `singleTask`, per riusare la WebView già aperta.
 
 ## Come installare l'applicazione
 
