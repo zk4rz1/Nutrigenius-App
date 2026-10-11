@@ -22,8 +22,14 @@ class MainActivity : ComponentActivity() {
         /** Extra dell'intent con cui la scorciatoia «Scatta foto» chiede alla PWA di aprire la fotocamera. */
         const val EXTRA_AZIONE = "azione"
         const val AZIONE_SCATTA = "scatta"
+        const val AZIONE_IMPOSTAZIONI = "impostazioni"
         private const val ID_SCORCIATOIA_SCATTA = "scatta"
+        private const val ID_SCORCIATOIA_IMPOSTAZIONI = "impostazioni"
     }
+
+    /** L'indirizzo dell'app web: di serie la produzione su ServeJS, si cambia dalle impostazioni dell'app. */
+    private val indirizzo: String get() = Impostazioni.indirizzo(this)
+    private var erroreMostrato: android.app.AlertDialog? = null
 
     private lateinit var webView: WebView
     private var paginaCaricata = false
@@ -154,7 +160,7 @@ class MainActivity : ComponentActivity() {
                     super.onReceivedError(view, request, error)
                     if (request?.isForMainFrame == true) {
                         errorManager.logError("Caricamento fallito", error?.description.toString(), "WebView", true)
-                        android.widget.Toast.makeText(this@MainActivity, "Caricamento fallito: ${error?.description}", android.widget.Toast.LENGTH_LONG).show()
+                        mostraErroreCaricamento("${error?.description}")
                     }
                 }
 
@@ -162,14 +168,16 @@ class MainActivity : ComponentActivity() {
                     super.onReceivedHttpError(view, request, errorResponse)
                     if (request?.isForMainFrame == true) {
                         errorManager.logError("Errore HTTP", errorResponse?.statusCode.toString(), "WebView", true)
-                        android.widget.Toast.makeText(this@MainActivity, "Errore HTTP: ${errorResponse?.statusCode}", android.widget.Toast.LENGTH_LONG).show()
+                        mostraErroreCaricamento("errore HTTP ${errorResponse?.statusCode}")
                     }
                 }
 
                 override fun onReceivedSslError(view: WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
+                    // Un certificato non valido non si accetta: la pagina potrebbe non
+                    // essere quella dell'app (prima si proseguiva, «per test»).
                     errorManager.logError("Errore SSL", error?.toString() ?: "", "WebView", true)
-                    android.widget.Toast.makeText(this@MainActivity, "Errore SSL. Ignoro per test.", android.widget.Toast.LENGTH_LONG).show()
-                    handler?.proceed() // Temporarily proceed to see if it fixes it
+                    handler?.cancel()
+                    mostraErroreCaricamento("certificato del sito non valido")
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -464,16 +472,91 @@ class MainActivity : ComponentActivity() {
         })
 
         registraScorciatoie()
+        Aggiornamenti.programma(this)
 
         // Load the PWA: dalla scorciatoia «Scatta foto» parte direttamente con
         // la fotocamera (la PWA riconosce ?scatta=1 come la sua scorciatoia).
-        webView.loadUrl(if (chiedeScatto(intent)) BuildConfig.WEBAPP_URL + "?scatta=1" else BuildConfig.WEBAPP_URL)
+        webView.loadUrl(if (chiedeScatto(intent)) "$indirizzo?scatta=1" else indirizzo)
+        if (chiedeImpostazioni(intent)) mostraImpostazioni()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Aggiornamenti.inPrimoPiano = true
+        if (Aggiornamenti.suApertura(this)) CoroutineScope(Dispatchers.IO).launch { Aggiornamenti.controlla(applicationContext) }
+    }
+
+    override fun onPause() {
+        Aggiornamenti.inPrimoPiano = false
+        super.onPause()
+    }
+
+    private fun chiedeImpostazioni(intent: android.content.Intent?): Boolean =
+        intent?.getStringExtra(EXTRA_AZIONE) == AZIONE_IMPOSTAZIONI
+
+    /** La pagina non si apre: si dice perché, con la strada per cambiare indirizzo. */
+    private fun mostraErroreCaricamento(perche: String) {
+        if (isFinishing || erroreMostrato?.isShowing == true) return
+        erroreMostrato = android.app.AlertDialog.Builder(this)
+            .setTitle("NutriGenius non si apre")
+            .setMessage("Non riesco ad aprire $indirizzo ($perche).\n\nControlla la rete e riprova, oppure cambia l'indirizzo dell'app.")
+            .setPositiveButton("Riprova") { _, _ -> webView.loadUrl(indirizzo) }
+            .setNeutralButton("Impostazioni dell'app") { _, _ -> mostraImpostazioni() }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    /**
+     * Le impostazioni dell'APK: l'indirizzo dell'app web (per tornare ad AI
+     * Studio senza ricompilare) e gli aggiornamenti. Si aprono dalla scorciatoia
+     * sull'icona (pressione lunga) o dalla finestra di errore.
+     */
+    private fun mostraImpostazioni() {
+        if (isFinishing) return
+        val margine = (20 * resources.displayMetrics.density).toInt()
+        val campo = android.widget.EditText(this).apply {
+            setText(indirizzo)
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine()
+        }
+        val info = android.widget.TextView(this).apply {
+            text = buildString {
+                append("Versione ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                val e = Impostazioni.run { esitoAggiornamenti }
+                if (e.isNotEmpty()) append("\nUltimo controllo: $e")
+                append("\nIndirizzo di serie: ${BuildConfig.WEBAPP_URL}")
+            }
+            setPadding(0, margine / 2, 0, 0)
+        }
+        val contenuto = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(margine, margine / 2, margine, 0)
+            addView(android.widget.TextView(this@MainActivity).apply { text = "Indirizzo dell'app" })
+            addView(campo)
+            addView(info)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Impostazioni dell'app")
+            .setView(contenuto)
+            .setPositiveButton("Salva") { _, _ ->
+                Impostazioni.impostaIndirizzo(this, campo.text.toString())
+                webView.loadUrl(indirizzo)
+            }
+            .setNeutralButton("Controlla aggiornamenti") { _, _ ->
+                android.widget.Toast.makeText(this, "Controllo gli aggiornamenti…", android.widget.Toast.LENGTH_SHORT).show()
+                CoroutineScope(Dispatchers.IO).launch {
+                    val esito = Aggiornamenti.controlla(applicationContext)
+                    withContext(Dispatchers.Main) { android.widget.Toast.makeText(this@MainActivity, esito, android.widget.Toast.LENGTH_LONG).show() }
+                }
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
     }
 
     /**
      * La scorciatoia «Scatta foto» (pressione lunga sull'icona, trascinabile in
      * Home): dinamica e non in XML, così il pacchetto di destinazione è quello
-     * giusto anche per il flavor dev, che ha il suffisso .dev.
+     * giusto anche se l'id del pacchetto cambia.
      */
     private fun registraScorciatoie() {
         try {
@@ -487,7 +570,16 @@ class MainActivity : ComponentActivity() {
                 .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.drawable.ic_shortcut_scatta))
                 .setIntent(intent)
                 .build()
-            androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, listOf(scorciatoia))
+            val impostazioni = androidx.core.content.pm.ShortcutInfoCompat.Builder(this, ID_SCORCIATOIA_IMPOSTAZIONI)
+                .setShortLabel(getString(R.string.scorciatoia_impostazioni_breve))
+                .setLongLabel(getString(R.string.scorciatoia_impostazioni_lunga))
+                .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                .setIntent(android.content.Intent(this, MainActivity::class.java).apply {
+                    action = android.content.Intent.ACTION_VIEW
+                    putExtra(EXTRA_AZIONE, AZIONE_IMPOSTAZIONI)
+                })
+                .build()
+            androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, listOf(scorciatoia, impostazioni))
         } catch (e: Exception) {
             errorManager.logError("Scorciatoia non registrata", e.stackTraceToString(), "AndroidNative", false)
         }
@@ -500,9 +592,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (chiedeImpostazioni(intent)) {
+            mostraImpostazioni()
+            return
+        }
         if (!chiedeScatto(intent)) return
         if (!paginaCaricata) {
-            webView.loadUrl(BuildConfig.WEBAPP_URL + "?scatta=1")
+            webView.loadUrl("$indirizzo?scatta=1")
             return
         }
         // La PWA aggiornata espone window.__nutrigeniusScatta e risponde 'ok';
@@ -512,7 +608,7 @@ class MainActivity : ComponentActivity() {
             "(function(){ if (window.__nutrigeniusScatta) { window.__nutrigeniusScatta(); return 'ok'; } " +
                 "window.dispatchEvent(new CustomEvent('nutrigenius-scatta')); return 'evento'; })()"
         ) { esito ->
-            if (esito != "\"ok\"") webView.loadUrl(BuildConfig.WEBAPP_URL + "?scatta=1")
+            if (esito != "\"ok\"") webView.loadUrl("$indirizzo?scatta=1")
         }
     }
 

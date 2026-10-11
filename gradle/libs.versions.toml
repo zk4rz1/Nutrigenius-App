@@ -16,6 +16,7 @@ lifecycleViewmodelNav3 = "2.10.0"
 healthConnect = "1.1.0"
 kotlinxSerializationJson = "1.8.0"
 gson = "2.10.1"
+work = "2.10.5"
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
@@ -41,6 +42,7 @@ androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecy
 androidx-health-connect-client = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }

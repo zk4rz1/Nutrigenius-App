@@ -11,23 +11,28 @@ android {
         applicationId = "com.example.nutrigeniusbridge"
         minSdk = 34
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.1.2"
+        versionCode = 5
+        versionName = "1.2.0"
+        // L'app web di produzione, su ServeJS (si cambia dalle impostazioni dell'app, senza ricompilare).
+        buildConfigField("String", "WEBAPP_URL", "\"https://nutrigenius.casascoiattolo.com/Nutrigenius/app/\"")
+        // Da dove l'APK si aggiorna da sé (Aggiornamenti.kt).
+        buildConfigField("String", "AGGIORNAMENTI_URL", "\"https://nutrigenius.casascoiattolo.com/Nutrigenius/app/apk/latest.json\"")
+        manifestPlaceholders["appName"] = "NutriGenius"
     }
 
-    flavorDimensions += "environment"
-    productFlavors {
-        create("dev") {
-            dimension = "environment"
-            buildConfigField("String", "WEBAPP_URL", "\"https://ais-dev-azm4up3burfd44w6aiid2e-795659724031.europe-west2.run.app/\"")
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-            manifestPlaceholders["appName"] = "NutriGenius Dev"
-        }
-        create("prod") {
-            dimension = "environment"
-            buildConfigField("String", "WEBAPP_URL", "\"https://nutrigenius-1097523116935.us-west1.run.app/\"")
-            manifestPlaceholders["appName"] = "NutriGenius App"
+    // La chiave di rilascio dalla 1.2.0 (le versioni prima erano firmate con una chiave di debug):
+    // file e password si passano a Gradle (-Pnutrigenius.keystore=…, -Pnutrigenius.password=…),
+    // non stanno nel repository. Senza, si firma con la chiave di debug.
+    signingConfigs {
+        val chiave = project.findProperty("nutrigenius.keystore") as String?
+        if (chiave != null) {
+            create("rilascio") {
+                storeFile = file(chiave)
+                storeType = "pkcs12"
+                storePassword = project.findProperty("nutrigenius.password") as String
+                keyAlias = "nutrigenius"
+                keyPassword = project.findProperty("nutrigenius.password") as String
+            }
         }
     }
 
@@ -35,7 +40,7 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("rilascio") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -101,6 +106,7 @@ dependencies {
 
   // Health Connect
   implementation(libs.androidx.health.connect.client)
+  implementation(libs.androidx.work.runtime)
   
   // Serialization
   implementation(libs.kotlinx.serialization.json)
