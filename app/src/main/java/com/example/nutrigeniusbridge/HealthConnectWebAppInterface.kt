@@ -19,6 +19,10 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun getAvailableRecordTypes(daysBack: Int, callbackFunctionName: String) {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) {
+                webView.evaluateJavascript("javascript:if(window.$callbackFunctionName) { window.$callbackFunctionName('[]'); }", null)
+                return@launch
+            }
             val endTime = Instant.now()
             val startTime = endTime.minus(daysBack.toLong(), ChronoUnit.DAYS)
             
@@ -44,6 +48,10 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun readRecords(recordName: String, daysBack: Int, callbackFunctionName: String) {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) {
+                webView.evaluateJavascript("javascript:if(window.$callbackFunctionName) { window.$callbackFunctionName('[]'); }", null)
+                return@launch
+            }
             if (healthConnectManager.hasPermissions(recordName)) {
                 fetchAndReturnData(recordName, daysBack, callbackFunctionName)
             } else {
@@ -57,6 +65,10 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun checkAndRequestMissingPermissions(recordNamesJson: String, callbackFunctionName: String) {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) {
+                webView.evaluateJavascript("javascript:if(window.$callbackFunctionName) { window.$callbackFunctionName(); }", null)
+                return@launch
+            }
             val recordNames = try {
                 val array = org.json.JSONArray(recordNamesJson)
                 List(array.length()) { array.getString(it) }
@@ -101,6 +113,7 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun requestSpecificPermissions(recordNamesJson: String) {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) return@launch
             val recordNames = try {
                 val array = org.json.JSONArray(recordNamesJson)
                 List(array.length()) { array.getString(it) }
@@ -116,6 +129,7 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun requestAllPermissions() {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) return@launch
             mainActivity.requestAllPermissions()
         }
     }
@@ -123,6 +137,10 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun syncHydrationData(liters: Double, dateStr: String, callbackFunctionName: String) {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) {
+                webView.evaluateJavascript("javascript:if(window.$callbackFunctionName) { window.$callbackFunctionName('Connessione Salute di questo telefono appartiene a un altro utente'); }", null)
+                return@launch
+            }
             if (healthConnectManager.hasPermissions("HydrationRecord")) {
                 withContext(Dispatchers.IO) {
                     healthConnectManager.syncHydrationData(liters, dateStr)
@@ -170,6 +188,10 @@ class HealthConnectWebAppInterface(
     @JavascriptInterface
     fun readRecordsByTime(recordName: String, startTimeIso: String, endTimeIso: String, callbackFunctionName: String) {
         CoroutineScope(Dispatchers.Main).launch {
+            if (!Salute.consentita(mainActivity)) {
+                webView.evaluateJavascript("javascript:if(window.$callbackFunctionName) { window.$callbackFunctionName('[]'); }", null)
+                return@launch
+            }
             if (healthConnectManager.hasPermissions(recordName)) {
                 try {
                     val startTime = Instant.parse(startTimeIso)

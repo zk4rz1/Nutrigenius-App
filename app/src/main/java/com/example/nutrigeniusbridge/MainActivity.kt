@@ -451,6 +451,7 @@ class MainActivity : ComponentActivity() {
         webAppInterface = HealthConnectWebAppInterface(this, healthConnectManager, webView, errorManager)
         webView.addJavascriptInterface(webAppInterface, "HealthConnectBridge")
         webView.addJavascriptInterface(NutriGeniusErrorBridge(errorManager, webView), "NutriGeniusErrorBridge")
+        webView.addJavascriptInterface(PonteApk(applicationContext), "NutriGeniusApk")
 
         setContentView(rootView)
 
@@ -473,6 +474,7 @@ class MainActivity : ComponentActivity() {
 
         registraScorciatoie()
         Aggiornamenti.programma(this)
+        Avvisi.programma(this)
 
         // Load the PWA: dalla scorciatoia «Scatta foto» parte direttamente con
         // la fotocamera (la PWA riconosce ?scatta=1 come la sua scorciatoia).
@@ -525,8 +527,22 @@ class MainActivity : ComponentActivity() {
                 val e = Impostazioni.run { esitoAggiornamenti }
                 if (e.isNotEmpty()) append("\nUltimo controllo: $e")
                 append("\nIndirizzo di serie: ${BuildConfig.WEBAPP_URL}")
+                append("\n${Salute.descrizione(this@MainActivity)}")
             }
             setPadding(0, margine / 2, 0, 0)
+        }
+        // Se il telefono passa a un'altra persona: i dati di Connessione Salute andranno al prossimo utente che li usa.
+        val dimenticaSalute = android.widget.TextView(this).apply {
+            text = "Dimentica il proprietario di Connessione Salute"
+            setTextColor(android.graphics.Color.parseColor("#4f46e5"))
+            paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            setPadding(0, margine / 2, 0, margine / 2)
+            visibility = if (Salute.proprietario(this@MainActivity) != 0L) android.view.View.VISIBLE else android.view.View.GONE
+            setOnClickListener {
+                Salute.dimentica(this@MainActivity)
+                visibility = android.view.View.GONE
+                android.widget.Toast.makeText(this@MainActivity, "Fatto: il prossimo utente che usa Connessione Salute ne diventa il proprietario.", android.widget.Toast.LENGTH_LONG).show()
+            }
         }
         val contenuto = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -534,6 +550,7 @@ class MainActivity : ComponentActivity() {
             addView(android.widget.TextView(this@MainActivity).apply { text = "Indirizzo dell'app" })
             addView(campo)
             addView(info)
+            addView(dimenticaSalute)
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("Impostazioni dell'app")
