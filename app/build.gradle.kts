@@ -11,13 +11,31 @@ android {
         applicationId = "com.example.nutrigeniusbridge"
         minSdk = 34
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.3.0"
+        versionCode = 8
+        versionName = "1.4.0"
         // L'app web di produzione, su ServeJS (si cambia dalle impostazioni dell'app, senza ricompilare).
         buildConfigField("String", "WEBAPP_URL", "\"https://nutrigenius.casascoiattolo.com/\"")
         // Da dove l'APK si aggiorna da sé (Aggiornamenti.kt).
         buildConfigField("String", "AGGIORNAMENTI_URL", "\"https://nutrigenius.casascoiattolo.com/apk/latest.json\"")
         manifestPlaceholders["appName"] = "NutriGenius"
+
+        // Firebase Cloud Messaging (1.4.0): i valori di google-services.json come risorse, gli
+        // stessi che scriverebbe il plugin google-services. Il file non sta nel repository: si
+        // passa a Gradle (-Pnutrigenius.firebase=…). Senza, FCM resta spento e gli avvisi
+        // arrivano solo con il controllo periodico.
+        (project.findProperty("nutrigenius.firebase") as String?)?.let { percorso ->
+            @Suppress("UNCHECKED_CAST")
+            val gs = groovy.json.JsonSlurper().parse(file(percorso)) as Map<String, Any?>
+            val progetto = gs["project_info"] as Map<String, Any?>
+            val cliente = (gs["client"] as List<Map<String, Any?>>).first {
+                ((it["client_info"] as Map<String, Any?>)["android_client_info"] as Map<String, Any?>)["package_name"] == applicationId
+            }
+            resValue("string", "google_app_id", (cliente["client_info"] as Map<String, Any?>)["mobilesdk_app_id"] as String)
+            resValue("string", "gcm_defaultSenderId", progetto["project_number"] as String)
+            resValue("string", "project_id", progetto["project_id"] as String)
+            resValue("string", "google_api_key", ((cliente["api_key"] as List<Map<String, Any?>>).first())["current_key"] as String)
+            (progetto["storage_bucket"] as String?)?.let { resValue("string", "google_storage_bucket", it) }
+        }
     }
 
     // La chiave di rilascio dalla 1.2.0 (le versioni prima erano firmate con una chiave di debug):
@@ -51,6 +69,7 @@ android {
       compose = true
       aidl = false
       buildConfig = true
+      resValues = true
       shaders = false
     }
 
@@ -107,6 +126,9 @@ dependencies {
   // Health Connect
   implementation(libs.androidx.health.connect.client)
   implementation(libs.androidx.work.runtime)
+  implementation(libs.firebase.messaging)
+  // firebase-messaging porta un fragment vecchio: registerForActivityResult vuole almeno la 1.3.0.
+  implementation(libs.androidx.fragment)
   
   // Serialization
   implementation(libs.kotlinx.serialization.json)

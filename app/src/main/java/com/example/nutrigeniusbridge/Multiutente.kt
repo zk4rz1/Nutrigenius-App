@@ -29,8 +29,9 @@ import java.util.concurrent.TimeUnit
  * - **avvisi del server** (richieste di accesso, deleghe, registrazioni…): la WebView
  *   non riceve il Web Push e ad app chiusa il codice nativo non può firmare, perché la
  *   chiave del dispositivo sta nella WebView. La pagina passa un gettone che serve solo
- *   a leggere gli avvisi del proprio account; WorkManager li chiede ogni 15 minuti
- *   (il minimo di Android) e li mostra come notifiche;
+ *   a leggere gli avvisi del proprio account. Dalla 1.4.0 arrivano subito con Firebase
+ *   Cloud Messaging (Fcm.kt: il token si registra con quel gettone); WorkManager li
+ *   chiede comunque ogni 15 minuti (il minimo di Android), come rete di sicurezza;
  * - **chi usa l'app**: utente e spazio aperto. Connessione Salute si legge solo per il
  *   suo proprietario (il primo utente che la usa nel proprio spazio), mai nello spazio
  *   di un altro.
@@ -63,8 +64,11 @@ object Avvisi {
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     fun imposta(c: Context, server: String, gettone: String, ultimo: Long, dispositivo: String) {
+        val prima = sp(c).getString("gettone", null)
         sp(c).edit().putString("server", server).putString("gettone", gettone).putLong("ultimo", ultimo)
             .putString("dispositivo", dispositivo).apply()
+        // Un gettone nuovo: il token FCM va registrato di nuovo con lui.
+        if (prima != gettone) sp(c).edit().remove("fcm_registrato").apply()
         programma(c, ExistingPeriodicWorkPolicy.UPDATE)
     }
 
@@ -88,15 +92,40 @@ object Avvisi {
         val vincoli = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val lavoro = PeriodicWorkRequestBuilder<ControlloAvvisi>(15, TimeUnit.MINUTES).setConstraints(vincoli).build()
         WorkManager.getInstance(c).enqueueUniquePeriodicWork(LAVORO, politica, lavoro)
+        Fcm.registra(c)
     }
 
-    /** Chiede gli avvisi nuovi e li mostra (ad app aperta li mostra già la pagina). */
-    suspend fun controlla(c: Context) = withContext(Dispatchers.IO) {
+    /** Il token FCM da registrare: quello già registrato con questo gettone non si rimanda. */
+    fun tokenDaRegistrare(c: Context, token: String): Boolean = sp(c).getString("fcm_registrato", null) != token
+
+    /** Manda al server il token FCM con il gettone degli avvisi. */
+    suspend fun registraFcm(c: Context, token: String) = withContext(Dispatchers.IO) {
         val s = sp(c)
         val server = s.getString("server", null) ?: return@withContext
         val gettone = s.getString("gettone", null) ?: return@withContext
+        val corpo = JSONObject().put("azione", "apk_fcm").put("gettone", gettone).put("token", token).toString()
+        val codice = chiama(server, corpo).first
+        if (codice == 200) s.edit().putString("fcm_registrato", token).apply()
+        else if (codice == 403) spegni(c)
+    }
+
+    /** Un avviso arrivato con FCM: si mostra e si segna come visto, così il controllo periodico non lo ripete. */
+    fun daFcm(c: Context, id: Long, tipo: String, titolo: String, testo: String) {
+        val s = sp(c)
+        if (s.getString("gettone", null).isNullOrEmpty()) return
         val ultimo = s.getLong("ultimo", 0L)
-        val corpo = JSONObject().put("azione", "apk_eventi").put("gettone", gettone).put("da", ultimo).toString()
+        if (id in 1..ultimo) return
+        if (id > ultimo) s.edit().putLong("ultimo", id).apply()
+        if (!Aggiornamenti.inPrimoPiano) notifica(c, id, tipo, titolo, testo)
+    }
+
+    /** Toglie la notifica di quel tipo (letta su un altro dispositivo, o qui). */
+    fun chiudi(c: Context, tipo: String) {
+        if (tipo.isEmpty() || tipo == "accesso") return
+        (c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(idNotifica(tipo, 0L))
+    }
+
+    private fun chiama(server: String, corpo: String): Pair<Int, String> {
         val con = (URL(server).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 30_000
@@ -109,25 +138,38 @@ object Avvisi {
         try {
             con.outputStream.use { it.write(corpo.toByteArray()) }
             val codice = con.responseCode
-            if (codice == 403) {
-                // Dispositivo tolto o utente bloccato: il gettone non vale più.
-                spegni(c)
-                return@withContext
-            }
-            if (codice != 200) return@withContext
-            val r = JSONObject(con.inputStream.bufferedReader().use { it.readText() })
-            val eventi = r.optJSONArray("eventi") ?: return@withContext
-            var max = ultimo
-            for (i in 0 until eventi.length()) {
-                val e = eventi.getJSONObject(i)
-                val id = e.optLong("id")
-                if (id > max) max = id
-                if (!Aggiornamenti.inPrimoPiano) notifica(c, id, e.optString("tipo"), e.optString("titolo"), e.optString("testo"))
-            }
-            if (max > ultimo) s.edit().putLong("ultimo", max).apply()
+            return codice to (if (codice == 200) con.inputStream.bufferedReader().use { it.readText() } else "")
         } finally {
             con.disconnect()
         }
+    }
+
+    /** Chiede gli avvisi nuovi e li mostra (ad app aperta li mostra già la pagina). */
+    suspend fun controlla(c: Context) = withContext(Dispatchers.IO) {
+        val s = sp(c)
+        val server = s.getString("server", null) ?: return@withContext
+        val gettone = s.getString("gettone", null) ?: return@withContext
+        val ultimo = s.getLong("ultimo", 0L)
+        val corpo = JSONObject().put("azione", "apk_eventi").put("gettone", gettone).put("da", ultimo).toString()
+        val (codice, testo) = chiama(server, corpo)
+        if (codice == 403) {
+            // Dispositivo tolto o utente bloccato: il gettone non vale più.
+            spegni(c)
+            return@withContext
+        }
+        if (codice != 200) return@withContext
+        val eventi = JSONObject(testo).optJSONArray("eventi") ?: return@withContext
+        // Nel frattempo FCM può averne già mostrati: si riparte dall'ultimo visto adesso.
+        val visto = s.getLong("ultimo", 0L)
+        var max = visto
+        for (i in 0 until eventi.length()) {
+            val e = eventi.getJSONObject(i)
+            val id = e.optLong("id")
+            if (id <= visto) continue
+            if (id > max) max = id
+            if (!Aggiornamenti.inPrimoPiano) notifica(c, id, e.optString("tipo"), e.optString("titolo"), e.optString("testo"))
+        }
+        if (max > visto) s.edit().putLong("ultimo", max).apply()
     }
 
     private fun notifica(c: Context, id: Long, tipo: String, titolo: String, testo: String) {
@@ -141,10 +183,12 @@ object Avvisi {
             .setStyle(NotificationCompat.BigTextStyle().bigText(testo))
             .setAutoCancel(true)
             .setContentIntent(PendingIntent.getActivity(c, 5000, apri, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
-        // Lo stesso tipo si sostituisce (come il «tag» del Web Push), tranne le richieste di accesso.
-        val nid = if (tipo == "accesso") 5100 + (id % 100).toInt() else 5000 + (tipo.hashCode() and 0x3f)
-        nm.notify(nid, b.build())
+        nm.notify(idNotifica(tipo, id), b.build())
     }
+
+    /** Lo stesso tipo si sostituisce (come il «tag» del Web Push), tranne le richieste di accesso. */
+    private fun idNotifica(tipo: String, id: Long): Int =
+        if (tipo == "accesso") 5100 + (id % 100).toInt() else 5000 + (tipo.hashCode() and 0x3f)
 }
 
 class ControlloAvvisi(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
