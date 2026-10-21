@@ -451,7 +451,7 @@ class MainActivity : ComponentActivity() {
         webAppInterface = HealthConnectWebAppInterface(this, healthConnectManager, webView, errorManager)
         webView.addJavascriptInterface(webAppInterface, "HealthConnectBridge")
         webView.addJavascriptInterface(NutriGeniusErrorBridge(errorManager, webView), "NutriGeniusErrorBridge")
-        webView.addJavascriptInterface(PonteApk(applicationContext), "NutriGeniusApk")
+        webView.addJavascriptInterface(PonteApk(applicationContext, webView), "NutriGeniusApk")
 
         setContentView(rootView)
 

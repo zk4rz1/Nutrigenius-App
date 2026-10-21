@@ -6,6 +6,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import com.example.nutrigeniusbridge.Impostazioni.esitoAggiornamenti
+import com.example.nutrigeniusbridge.Impostazioni.ultimoControllo
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -36,7 +41,7 @@ import java.util.concurrent.TimeUnit
  *   suo proprietario (il primo utente che la usa nel proprio spazio), mai nello spazio
  *   di un altro.
  */
-class PonteApk(private val c: Context) {
+class PonteApk(private val c: Context, private val webView: WebView) {
     @JavascriptInterface
     fun avvisi(json: String) {
         val o = runCatching { JSONObject(json) }.getOrElse { JSONObject() }
@@ -49,6 +54,25 @@ class PonteApk(private val c: Context) {
 
     @JavascriptInterface
     fun statoAvvisi(): String = Avvisi.stato(c).toString()
+
+    /** La versione dell'APK e l'ultimo controllo degli aggiornamenti, per le impostazioni della pagina (1.4.1). */
+    @JavascriptInterface
+    fun versioneApk(): String = JSONObject()
+        .put("nome", BuildConfig.VERSION_NAME)
+        .put("codice", BuildConfig.VERSION_CODE)
+        .put("ultimoControllo", c.ultimoControllo)
+        .put("esito", c.esitoAggiornamenti)
+        .toString()
+
+    /** Controlla subito gli aggiornamenti (e, se ce n'è uno, lo scarica e lo fa installare); l'esito va a window[callback]. */
+    @JavascriptInterface
+    fun controllaAggiornamenti(callback: String) {
+        if (!callback.matches(Regex("[A-Za-z_$][A-Za-z0-9_$]*"))) return
+        CoroutineScope(Dispatchers.IO).launch {
+            val esito = Aggiornamenti.controlla(c)
+            webView.post { webView.evaluateJavascript("window.$callback && window.$callback(${JSONObject.quote(esito)})", null) }
+        }
+    }
 
     @JavascriptInterface
     fun utente(json: String) {
