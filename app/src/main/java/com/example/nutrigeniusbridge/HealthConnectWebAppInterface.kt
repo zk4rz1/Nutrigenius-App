@@ -154,6 +154,28 @@ class HealthConnectWebAppInterface(
         }
     }
 
+    /** 1.5.0 (#70): l'acqua di un giorno, una bevuta per record (vedi HealthConnectManager). */
+    @JavascriptInterface
+    fun syncHydrationEntries(dateStr: String, bevuteJson: String, callbackFunctionName: String) {
+        CoroutineScope(Dispatchers.Main).launch {
+            val esito: String? = if (!Salute.consentita(mainActivity)) {
+                "Connessione Salute di questo telefono appartiene a un altro utente"
+            } else if (!healthConnectManager.hasPermissions("HydrationRecord")) {
+                "Permission denied"
+            } else {
+                try {
+                    withContext(Dispatchers.IO) { healthConnectManager.syncHydrationEntries(dateStr, bevuteJson) }
+                    null
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    e.message ?: "errore"
+                }
+            }
+            val arg = if (esito == null) "" else org.json.JSONObject.quote(esito)
+            webView.evaluateJavascript("javascript:if(window.$callbackFunctionName) { window.$callbackFunctionName($arg); }", null)
+        }
+    }
+
     @JavascriptInterface
     fun copyToClipboard(text: String) {
         CoroutineScope(Dispatchers.Main).launch {

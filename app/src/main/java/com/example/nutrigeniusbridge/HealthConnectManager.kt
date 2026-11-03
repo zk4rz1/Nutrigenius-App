@@ -112,4 +112,44 @@ class HealthConnectManager(private val context: Context) {
             e.printStackTrace()
         }
     }
+
+    /**
+     * L'acqua di un giorno, una bevuta per record (1.5.0, #70 di NutriGenius): si cancellano i
+     * record d'acqua di NutriGenius di quel giorno e si scrive un HydrationRecord per bevuta, con
+     * inizio e fine veri e clientRecordId = id della bevuta. Le bevute della bilancia WaterLink sono
+     * registrate in automatico da un dispositivo di tipo bilancia, quelle dei pulsanti a mano.
+     * Tutto il giorno in un colpo: mai il totale delle 12:00 insieme alle singole bevute, che
+     * Connessione Salute sommerebbe contando l'acqua due volte.
+     *
+     * bevuteJson: [{id, inizio (ms), fine (ms), ml, bilancia}]
+     */
+    suspend fun syncHydrationEntries(dateStr: String, bevuteJson: String) {
+        val zona = java.time.ZoneId.systemDefault()
+        val giorno = java.time.LocalDate.parse(dateStr)
+        val dal = giorno.atStartOfDay(zona).toInstant()
+        val al = giorno.plusDays(1).atStartOfDay(zona).toInstant()
+        val elenco = org.json.JSONArray(bevuteJson)
+        val bilancia = androidx.health.connect.client.records.metadata.Device(
+            manufacturer = "WaterLink", model = "M5Dial", type = androidx.health.connect.client.records.metadata.Device.TYPE_SCALE
+        )
+        val record = (0 until elenco.length()).map { i ->
+            val b = elenco.getJSONObject(i)
+            val inizio = Instant.ofEpochMilli(b.getLong("inizio"))
+            val fine = Instant.ofEpochMilli(maxOf(b.getLong("fine"), b.getLong("inizio") + 1000))
+            val id = b.getString("id")
+            HydrationRecord(
+                startTime = inizio,
+                startZoneOffset = zona.rules.getOffset(inizio),
+                endTime = fine,
+                endZoneOffset = zona.rules.getOffset(fine),
+                volume = androidx.health.connect.client.units.Volume.milliliters(b.getDouble("ml")),
+                metadata = if (b.optBoolean("bilancia"))
+                    androidx.health.connect.client.records.metadata.Metadata.autoRecorded(device = bilancia, clientRecordId = id)
+                else
+                    androidx.health.connect.client.records.metadata.Metadata.manualEntry(clientRecordId = id)
+            )
+        }
+        healthConnectClient.deleteRecords(HydrationRecord::class, TimeRangeFilter.between(dal, al))
+        if (record.isNotEmpty()) healthConnectClient.insertRecords(record)
+    }
 }
