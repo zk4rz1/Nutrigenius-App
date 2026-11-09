@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_acqua_uno_descrizione"
+    android:initialLayout="@layout/widget_acqua_uno"
+    android:previewLayout="@layout/widget_acqua_uno"
+    android:minWidth="40dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="1"
+    android:targetCellHeight="1"
+    android:resizeMode="none"
+    android:updatePeriodMillis="1800000"
+    android:configure="com.example.nutrigeniusbridge.ConfiguraAcquaUno"
+    android:widgetFeatures="reconfigurable"
+    android:widgetCategory="home_screen" />

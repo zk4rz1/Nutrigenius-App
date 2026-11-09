@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/riga_radice"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp">
+    <ImageView android:id="@+id/riga_spunta" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_widget_spunta_no" android:importantForAccessibility="no" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:orientation="vertical">
+        <TextView android:id="@+id/riga_nome" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#1E293B" android:textSize="14sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/riga_dettaglio" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#64748B" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+</LinearLayout>

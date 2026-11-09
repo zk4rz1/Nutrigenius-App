@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.net.Uri
+import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import androidx.work.BackoffPolicy
@@ -47,28 +48,50 @@ object DatiWidget {
     private const val LAVORO_INVIO = "widget-invio"
     private const val LAVORO_AGGIORNA = "widget-aggiorna"
     private const val MAX_CODA = 200
+    /** Chi usa le finestre solo dal menu dell'icona ha i dati aggiornati per un mese dall'ultima volta. */
+    private const val FINESTRA_VALE_MS = 30 * 86_400_000L
     /** Aprendo una finestra si chiede l'aggiornamento al server, ma non più spesso di così. */
     private const val INTERVALLO_LETTURA_MS = 5 * 60_000L
 
     const val AZIONE_BEVI = "com.example.nutrigeniusbridge.WIDGET_BEVI"
+    const val AZIONE_SPUNTA = "com.example.nutrigeniusbridge.WIDGET_SPUNTA"
     const val EXTRA_TIPO = "tipo"
+    const val EXTRA_FOOD = "food"
     const val CHIAVE_IL = "il"
 
     private val blocco = Any()
     fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    private val provider = listOf(WidgetAcqua::class.java, WidgetSpesa::class.java, WidgetPasti::class.java)
+    private val provider = listOf(
+        WidgetAcqua::class.java, WidgetAcquaUno::class.java, WidgetAcquaDue::class.java,
+        WidgetSpesa::class.java, WidgetSpesaUno::class.java, WidgetPasti::class.java, WidgetPastiUno::class.java,
+    )
 
-    /** C'è almeno un widget sulla schermata Home? Senza, non si calcola e non si scarica niente. */
+    /** C'è almeno un widget, o si usano le finestre dal menu dell'icona? Senza, non si calcola e non si scarica niente. */
     fun presenti(c: Context): Boolean {
         val m = AppWidgetManager.getInstance(c)
-        return provider.any { m.getAppWidgetIds(ComponentName(c, it)).isNotEmpty() }
+        if (provider.any { m.getAppWidgetIds(ComponentName(c, it)).isNotEmpty() }) return true
+        return System.currentTimeMillis() - sp(c).getLong("finestra", 0L) < FINESTRA_VALE_MS
+    }
+
+    fun segnaFinestraUsata(c: Context) = sp(c).edit().putLong("finestra", System.currentTimeMillis()).apply()
+
+    fun ridisegnaAcqua(c: Context) {
+        WidgetAcqua.disegna(c)
+        WidgetAcquaUno.disegna(c)
+        WidgetAcquaDue.disegna(c)
+    }
+
+    fun ridisegnaSpesa(c: Context) {
+        WidgetSpesa.disegna(c)
+        WidgetSpesaUno.disegna(c)
     }
 
     fun ridisegna(c: Context) {
-        WidgetAcqua.disegna(c)
-        WidgetSpesa.disegna(c)
+        ridisegnaAcqua(c)
+        ridisegnaSpesa(c)
         WidgetPasti.disegna(c)
+        WidgetPastiUno.disegna(c)
     }
 
     // ------------------------------------------------------------------ i dati
@@ -106,7 +129,58 @@ object DatiWidget {
     private fun oggetto(c: Context, chiave: String): JSONObject? =
         sp(c).getString(chiave, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
 
-    fun spesa(c: Context): JSONObject? = oggetto(c, "spesa")
+    /** La lista con sopra le operazioni ancora in coda. */
+    fun spesa(c: Context): JSONObject? {
+        val s = oggetto(c, "spesa") ?: return null
+        val q = codaSpesa(c)
+        for (i in 0 until q.length()) runCatching { SpesaWidget.applica(s, q.getJSONObject(i)) }
+        return s
+    }
+
+    private fun codaSpesa(c: Context): JSONArray =
+        runCatching { JSONArray(sp(c).getString("coda_spesa", "[]")) }.getOrElse { JSONArray() }
+
+    /** L'operazione della spunta, con la quantità tonda proposta dall'app. */
+    fun opMetti(r: JSONObject, lunga: Boolean): JSONObject = JSONObject().put("op", "metti")
+        .put("acquisto", "acq-${UUID.randomUUID()}").put("foodId", r.optString("foodId")).put("nome", r.optString("nome"))
+        .put("quantita", r.optDouble("proposta", r.optDouble("daComprare", 0.0))).put("lunga", lunga)
+
+    /**
+     * Un'operazione sulla lista: sul disco subito, così la finestra e il widget la mostrano
+     * senza rete. Le correzioni consecutive della stessa quantità ne diventano una sola.
+     */
+    fun opSpesa(c: Context, o: JSONObject) {
+        synchronized(blocco) {
+            val menu = oggetto(c, "spesa")?.optString("menuId").orEmpty()
+            if (menu.isEmpty()) return
+            o.put("id", UUID.randomUUID().toString()).put("menu", menu)
+            if (!o.has("il")) o.put("il", System.currentTimeMillis())
+            val q = codaSpesa(c)
+            if (q.length() >= MAX_CODA) return
+            val tieni = JSONArray()
+            for (i in 0 until q.length()) {
+                val x = q.getJSONObject(i)
+                if (o.optString("op") == "cambia" && x.optString("op") == "cambia" && x.optString("acquisto") == o.optString("acquisto")) {
+                    for (k in listOf("quantita", "lunga")) if (!o.has(k) && x.has(k)) o.put(k, x.get(k))
+                } else {
+                    tieni.put(x)
+                }
+            }
+            tieni.put(o)
+            sp(c).edit().putString("coda_spesa", tieni.toString()).commit()
+        }
+        programmaInvio(c)
+        ridisegnaSpesa(c)
+    }
+
+    /** Dal widget: spunta o togli la spunta di un prodotto da comprare. */
+    fun spunta(c: Context, foodId: String) {
+        if (foodId.isEmpty()) return
+        val r = SpesaWidget.riga(spesa(c), 0, foodId) ?: return
+        val carrello = r.optJSONObject("carrello")
+        if (carrello != null) opSpesa(c, JSONObject().put("op", "togli").put("acquisto", carrello.optString("id")))
+        else opSpesa(c, opMetti(r, false))
+    }
 
     /** I prossimi pasti: quelli già finiti escono da soli, anche se i dati sono di ore fa. */
     fun prossimiPasti(c: Context, quanti: Int): List<JSONObject> {
@@ -164,7 +238,41 @@ object DatiWidget {
     }
 
     /** true se non resta niente da fare, false se conviene riprovare. */
-    suspend fun invia(c: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun invia(c: Context): Boolean {
+        val acqua = inviaAcqua(c)
+        val lista = inviaSpesa(c)
+        return acqua && lista
+    }
+
+    private suspend fun inviaSpesa(c: Context): Boolean = withContext(Dispatchers.IO) {
+        val daInviare = synchronized(blocco) { codaSpesa(c) }
+        if (daInviare.length() == 0) return@withContext true
+        val (server, gettone) = Avvisi.credenziali(c) ?: return@withContext true
+        val corpo = JSONObject().put("azione", "apk_spesa").put("gettone", gettone).put("ops", daInviare).toString()
+        val (codice, testo) = runCatching { Avvisi.chiama(server, corpo) }.getOrElse { return@withContext false }
+        if (codice == 403) {
+            Avvisi.spegni(c)
+            return@withContext true
+        }
+        if (codice != 200) return@withContext false
+        val r = runCatching { JSONObject(testo) }.getOrElse { return@withContext false }
+        val ricevute = r.optJSONArray("ricevute") ?: JSONArray()
+        val inviate = (0 until ricevute.length()).map { ricevute.getString(it) }.toSet()
+        synchronized(blocco) {
+            val vecchia = codaSpesa(c)
+            val resta = JSONArray()
+            for (i in 0 until vecchia.length()) {
+                val b = vecchia.getJSONObject(i)
+                if (b.optString("id") !in inviate) resta.put(b)
+            }
+            sp(c).edit().putString("coda_spesa", resta.toString()).commit()
+        }
+        val dati = r.optJSONObject("dati")
+        if (dati != null) salva(c, dati, r.optLong("versione")) else ridisegnaSpesa(c)
+        true
+    }
+
+    private suspend fun inviaAcqua(c: Context): Boolean = withContext(Dispatchers.IO) {
         val daInviare = synchronized(blocco) { coda(c) }
         if (daInviare.length() == 0) return@withContext true
         val (server, gettone) = Avvisi.credenziali(c) ?: return@withContext true
@@ -194,7 +302,7 @@ object DatiWidget {
             }
             e.commit()
         }
-        ridisegna(c)
+        ridisegnaAcqua(c)
         true
     }
 
@@ -204,8 +312,10 @@ object DatiWidget {
     suspend fun aggiorna(c: Context) = withContext(Dispatchers.IO) {
         val (server, gettone) = Avvisi.credenziali(c) ?: return@withContext
         val s = sp(c)
+        // Dati del formato di prima (1.6.0): si chiedono comunque quelli nuovi.
+        val vecchi = oggetto(c, "spesa")?.optJSONArray("sezioni")?.optJSONObject(0)?.optJSONArray("righe")?.optJSONObject(0)?.has("foodId") == false
         val corpo = JSONObject().put("azione", "apk_widget").put("gettone", gettone)
-            .put("versione", s.getLong("versione", -1L)).put("il", s.getLong(CHIAVE_IL, 0L)).toString()
+            .put("versione", if (vecchi) -1L else s.getLong("versione", -1L)).put("il", s.getLong(CHIAVE_IL, 0L)).toString()
         val (codice, testo) = Avvisi.chiama(server, corpo)
         if (codice == 403) {
             Avvisi.spegni(c)
@@ -284,6 +394,96 @@ private fun aggiornaTutti(c: Context, provider: Class<*>, viste: RemoteViews) {
     if (ids.isNotEmpty()) m.updateAppWidget(ids, viste)
 }
 
+private fun tinta(v: RemoteViews, raggiunto: Boolean) =
+    v.setColorStateList(R.id.acqua_livello, "setProgressTintList", ColorStateList.valueOf(Color.parseColor(if (raggiunto) "#10B981" else "#3B82F6")))
+
+private fun beviPi(c: Context, tipo: String): PendingIntent = PendingIntent.getBroadcast(
+    c, 7010 + listOf("glass", "bottle", "flask").indexOf(tipo),
+    Intent(c, WidgetAcqua::class.java).setAction(DatiWidget.AZIONE_BEVI).putExtra(DatiWidget.EXTRA_TIPO, tipo),
+    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+)
+
+/** Il pulsante unico: a scelta, con la conferma se chiesta. Cambiare con la matita del widget. */
+class WidgetAcquaUno : AppWidgetProvider() {
+    override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
+        disegna(c)
+        DatiWidget.chiediAggiornamento(c)
+    }
+
+    override fun onDeleted(c: Context, ids: IntArray) = ConfAcqua.togli(c, ids)
+
+    companion object {
+        fun disegna(c: Context) {
+            val m = AppWidgetManager.getInstance(c)
+            val a = DatiWidget.acqua(c)
+            for (id in m.getAppWidgetIds(ComponentName(c, WidgetAcquaUno::class.java))) {
+                val v = RemoteViews(c.packageName, R.layout.widget_acqua_uno)
+                val tipo = ConfAcqua.tipo(c, id)
+                v.setImageViewResource(R.id.uno_icona, ConfAcqua.icona(tipo))
+                if (a == null || !a.attiva) {
+                    v.setTextViewText(R.id.uno_testo, "—")
+                    v.setProgressBar(R.id.acqua_livello, 100, 0, false)
+                    v.setOnClickPendingIntent(R.id.uno_radice, apriNormale(c, 7300 + id))
+                } else {
+                    val massimo = maxOf(a.target, 1)
+                    v.setTextViewText(R.id.uno_testo, "${a.ml}")
+                    v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
+                    tinta(v, a.ml >= massimo)
+                    v.setOnClickPendingIntent(R.id.uno_radice, if (ConfAcqua.conferma(c, id)) PendingIntent.getActivity(
+                        c, 7300 + id, Intent(c, ConfermaAcqua::class.java).putExtra(DatiWidget.EXTRA_TIPO, tipo).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    ) else beviPi(c, tipo))
+                }
+                m.updateAppWidget(id, v)
+            }
+        }
+    }
+}
+
+/** Il formato 2x1: aggiungi e la quantità del prossimo aggiungi. */
+class WidgetAcquaDue : AppWidgetProvider() {
+    override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
+        disegna(c)
+        DatiWidget.chiediAggiornamento(c)
+    }
+
+    override fun onDeleted(c: Context, ids: IntArray) = ConfAcqua.togli(c, ids)
+
+    companion object {
+        fun disegna(c: Context) {
+            val m = AppWidgetManager.getInstance(c)
+            val a = DatiWidget.acqua(c)
+            for (id in m.getAppWidgetIds(ComponentName(c, WidgetAcquaDue::class.java))) {
+                val v = RemoteViews(c.packageName, R.layout.widget_acqua_due)
+                val tipo = ConfAcqua.tipo(c, id)
+                v.setImageViewResource(R.id.due_icona, ConfAcqua.icona(tipo))
+                if (a == null || !a.attiva) {
+                    v.setTextViewText(R.id.acqua_testo, if (a == null) "Apri NutriGenius" else "Acqua non attiva")
+                    v.setTextViewText(R.id.due_ml, "—")
+                    v.setProgressBar(R.id.acqua_livello, 100, 0, false)
+                    val apri = apriNormale(c, 7400 + id)
+                    v.setOnClickPendingIntent(R.id.acqua_totale, apri)
+                    v.setOnClickPendingIntent(R.id.due_aggiungi, apri)
+                    v.setOnClickPendingIntent(R.id.due_scegli, apri)
+                } else {
+                    val massimo = maxOf(a.target, 1)
+                    v.setTextViewText(R.id.acqua_testo, "${a.ml} / ${a.target} ml")
+                    v.setTextViewText(R.id.due_ml, "+${ConfAcqua.ml(a, tipo)}")
+                    v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
+                    tinta(v, a.ml >= massimo)
+                    v.setOnClickPendingIntent(R.id.acqua_totale, apriApp(c, 7001, "widget=acqua"))
+                    v.setOnClickPendingIntent(R.id.due_aggiungi, beviPi(c, tipo))
+                    v.setOnClickPendingIntent(R.id.due_scegli, PendingIntent.getActivity(
+                        c, 7400 + id, Intent(c, ScegliAcqua::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    ))
+                }
+                m.updateAppWidget(id, v)
+            }
+        }
+    }
+}
+
 class WidgetAcqua : AppWidgetProvider() {
     override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
         disegna(c)
@@ -293,7 +493,7 @@ class WidgetAcqua : AppWidgetProvider() {
     override fun onReceive(c: Context, i: Intent) {
         if (i.action == DatiWidget.AZIONE_BEVI) {
             DatiWidget.bevi(c, i.getStringExtra(DatiWidget.EXTRA_TIPO).orEmpty())
-            disegna(c)
+            DatiWidget.ridisegnaAcqua(c)
             return
         }
         super.onReceive(c, i)
@@ -304,11 +504,6 @@ class WidgetAcqua : AppWidgetProvider() {
             Triple("glass", R.id.acqua_glass, R.id.acqua_glass_ml),
             Triple("bottle", R.id.acqua_bottle, R.id.acqua_bottle_ml),
             Triple("flask", R.id.acqua_flask, R.id.acqua_flask_ml),
-        )
-
-        private fun bevi(c: Context, tipo: String, codice: Int): PendingIntent = PendingIntent.getBroadcast(
-            c, codice, Intent(c, WidgetAcqua::class.java).setAction(DatiWidget.AZIONE_BEVI).putExtra(DatiWidget.EXTRA_TIPO, tipo),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         fun disegna(c: Context) {
@@ -330,10 +525,10 @@ class WidgetAcqua : AppWidgetProvider() {
                 v.setTextViewText(R.id.acqua_testo, "${a.ml} / ${a.target} ml")
                 v.setTextViewText(R.id.acqua_percento, "${a.ml * 100 / massimo}%")
                 v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
-                v.setColorStateList(R.id.acqua_livello, "setProgressTintList", ColorStateList.valueOf(Color.parseColor(if (raggiunto) "#10B981" else "#3B82F6")))
+                tinta(v, raggiunto)
                 v.setOnClickPendingIntent(R.id.acqua_totale, apriApp(c, 7001, "widget=acqua"))
-                CONTENITORI.forEachIndexed { n, (tipo, bottone, testo) ->
-                    v.setOnClickPendingIntent(bottone, bevi(c, tipo, 7010 + n))
+                CONTENITORI.forEach { (tipo, bottone, testo) ->
+                    v.setOnClickPendingIntent(bottone, beviPi(c, tipo))
                     v.setTextViewText(testo, "${when (tipo) { "glass" -> a.glass; "bottle" -> a.bottle; else -> a.flask }} ml")
                 }
             }
@@ -342,17 +537,33 @@ class WidgetAcqua : AppWidgetProvider() {
     }
 }
 
+/** Quanti prodotti restano da comprare (senza quelli già nel carrello). */
+private fun daComprare(c: Context): List<JSONObject> {
+    val a = DatiWidget.spesa(c)?.optJSONArray("sezioni")?.optJSONObject(0)?.optJSONArray("righe") ?: return emptyList()
+    return (0 until a.length()).map { a.getJSONObject(it) }.filter { !it.has("carrello") }
+}
+
+private const val MAX_RIGHE_LISTA = 60
+
+/** Allungabile: basso è una riga di riepilogo, alto mostra la lista da spuntare. */
 class WidgetSpesa : AppWidgetProvider() {
     override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
         disegna(c)
         DatiWidget.chiediAggiornamento(c)
     }
 
+    override fun onReceive(c: Context, i: Intent) {
+        if (i.action == DatiWidget.AZIONE_SPUNTA) {
+            DatiWidget.spunta(c, i.getStringExtra(DatiWidget.EXTRA_FOOD).orEmpty())
+            return
+        }
+        super.onReceive(c, i)
+    }
+
     companion object {
-        fun disegna(c: Context) {
+        private fun compatta(c: Context): RemoteViews {
             val v = RemoteViews(c.packageName, R.layout.widget_spesa)
-            val righe = DatiWidget.spesa(c)?.optJSONArray("sezioni")?.optJSONObject(0)?.optJSONArray("righe")
-            val daFare = if (righe == null) emptyList() else (0 until righe.length()).map { righe.getJSONObject(it) }.filter { !it.optBoolean("fatto") }
+            val daFare = daComprare(c)
             v.setTextViewText(R.id.spesa_numero, when {
                 !DatiWidget.collegato(c) -> "Apri NutriGenius per collegare il widget"
                 daFare.isEmpty() -> "Niente da comprare"
@@ -362,12 +573,44 @@ class WidgetSpesa : AppWidgetProvider() {
             v.setTextViewText(R.id.spesa_anteprima, daFare.take(4).joinToString(", ") { it.optString("nome") })
             v.setViewVisibility(R.id.spesa_anteprima, if (daFare.isEmpty()) View.GONE else View.VISIBLE)
             v.setOnClickPendingIntent(R.id.spesa_radice, if (DatiWidget.collegato(c)) apriFinestra(c, 7020, FinestraSpesa::class.java) else apriNormale(c, 7021))
-            aggiornaTutti(c, WidgetSpesa::class.java, v)
+            return v
+        }
+
+        private fun lista(c: Context): RemoteViews {
+            val v = RemoteViews(c.packageName, R.layout.widget_lista)
+            val righe = DatiWidget.spesa(c)?.optJSONArray("sezioni")?.optJSONObject(0)?.optJSONArray("righe")
+            val tutte = if (righe == null) emptyList() else (0 until righe.length()).map { righe.getJSONObject(it) }
+            v.setImageViewResource(R.id.lista_icona, R.drawable.ic_widget_spesa)
+            v.setTextViewText(R.id.lista_titolo, "Lista della spesa")
+            v.setTextViewText(R.id.lista_numero, if (tutte.isEmpty()) "" else "${tutte.count { !it.has("carrello") }} da comprare")
+            v.setTextViewText(R.id.lista_vuota, if (DatiWidget.collegato(c)) "Niente da comprare" else "Apri NutriGenius per collegare il widget")
+            v.setOnClickPendingIntent(R.id.lista_testa, if (DatiWidget.collegato(c)) apriFinestra(c, 7020, FinestraSpesa::class.java) else apriNormale(c, 7021))
+            v.setEmptyView(R.id.lista, R.id.lista_vuota)
+            v.setPendingIntentTemplate(R.id.lista, PendingIntent.getBroadcast(
+                c, 7040, Intent(c, WidgetSpesa::class.java).setAction(DatiWidget.AZIONE_SPUNTA),
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            ))
+            val b = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(1)
+            for (r in tutte.take(MAX_RIGHE_LISTA)) {
+                val riga = RemoteViews(c.packageName, R.layout.widget_riga_spesa)
+                val nel = r.has("carrello")
+                riga.setImageViewResource(R.id.riga_spunta, if (nel) R.drawable.ic_widget_spunta_si else R.drawable.ic_widget_spunta_no)
+                riga.setTextViewText(R.id.riga_nome, r.optString("nome"))
+                riga.setTextViewText(R.id.riga_dettaglio, SpesaWidget.dettaglio(0, r))
+                riga.setOnClickFillInIntent(R.id.riga_radice, Intent().putExtra(DatiWidget.EXTRA_FOOD, r.optString("foodId")))
+                b.addItem(r.optString("foodId").hashCode().toLong(), riga)
+            }
+            v.setRemoteAdapter(R.id.lista, b.build())
+            return v
+        }
+
+        fun disegna(c: Context) {
+            aggiornaTutti(c, WidgetSpesa::class.java, RemoteViews(mapOf(SizeF(100f, 40f) to compatta(c), SizeF(100f, 100f) to lista(c))))
         }
     }
 }
 
-class WidgetPasti : AppWidgetProvider() {
+class WidgetSpesaUno : AppWidgetProvider() {
     override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
         disegna(c)
         DatiWidget.chiediAggiornamento(c)
@@ -375,6 +618,24 @@ class WidgetPasti : AppWidgetProvider() {
 
     companion object {
         fun disegna(c: Context) {
+            val v = RemoteViews(c.packageName, R.layout.widget_uno)
+            v.setImageViewResource(R.id.uno_icona, R.drawable.ic_widget_spesa)
+            v.setTextViewText(R.id.uno_testo, if (DatiWidget.collegato(c)) "${daComprare(c).size}" else "—")
+            v.setOnClickPendingIntent(R.id.uno_radice, if (DatiWidget.collegato(c)) apriFinestra(c, 7020, FinestraSpesa::class.java) else apriNormale(c, 7021))
+            aggiornaTutti(c, WidgetSpesaUno::class.java, v)
+        }
+    }
+}
+
+/** Allungabile: basso è una riga di riepilogo, alto mostra i prossimi 4 pasti. */
+class WidgetPasti : AppWidgetProvider() {
+    override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
+        disegna(c)
+        DatiWidget.chiediAggiornamento(c)
+    }
+
+    companion object {
+        private fun compatta(c: Context): RemoteViews {
             val v = RemoteViews(c.packageName, R.layout.widget_pasti)
             val prossimo = DatiWidget.prossimiPasti(c, 1).firstOrNull()
             v.setTextViewText(R.id.pasti_prossimo, when {
@@ -387,7 +648,77 @@ class WidgetPasti : AppWidgetProvider() {
             v.setTextViewText(R.id.pasti_voci, nomi)
             v.setViewVisibility(R.id.pasti_voci, if (nomi.isEmpty()) View.GONE else View.VISIBLE)
             v.setOnClickPendingIntent(R.id.pasti_radice, if (DatiWidget.collegato(c)) apriFinestra(c, 7030, FinestraPasti::class.java) else apriNormale(c, 7031))
-            aggiornaTutti(c, WidgetPasti::class.java, v)
+            return v
+        }
+
+        private fun lista(c: Context): RemoteViews {
+            val v = RemoteViews(c.packageName, R.layout.widget_lista)
+            val pasti = DatiWidget.prossimiPasti(c, 4)
+            v.setImageViewResource(R.id.lista_icona, R.drawable.ic_widget_pasti)
+            v.setTextViewText(R.id.lista_titolo, "Prossimi pasti")
+            v.setTextViewText(R.id.lista_numero, "")
+            v.setTextViewText(R.id.lista_vuota, if (DatiWidget.collegato(c)) "Nessun pasto in programma" else "Apri NutriGenius per collegare il widget")
+            v.setOnClickPendingIntent(R.id.lista_testa, if (DatiWidget.collegato(c)) apriFinestra(c, 7030, FinestraPasti::class.java) else apriNormale(c, 7031))
+            v.setEmptyView(R.id.lista, R.id.lista_vuota)
+            v.setPendingIntentTemplate(R.id.lista, PendingIntent.getActivity(
+                c, 7050,
+                Intent(c, MainActivity::class.java).setAction(Intent.ACTION_VIEW).putExtra(MainActivity.EXTRA_AZIONE, MainActivity.AZIONE_WIDGET)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            ))
+            val b = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(2)
+            var righe = 0
+            for (p in pasti) {
+                val data = p.optString("data")
+                val pasto = p.optString("pasto")
+                val testa = RemoteViews(c.packageName, R.layout.widget_riga_pasto)
+                testa.setTextViewText(R.id.riga_nome, DatiWidget.nomePasto(pasto))
+                testa.setTextViewText(R.id.riga_giorno, DatiWidget.giornoInParole(data))
+                testa.setOnClickFillInIntent(R.id.riga_radice, Intent().putExtra(MainActivity.EXTRA_WIDGET, DatiWidget.queryPasto(data, pasto)))
+                b.addItem("$data|$pasto".hashCode().toLong(), testa)
+                val voci = p.optJSONArray("voci") ?: continue
+                for (i in 0 until voci.length()) {
+                    if (righe++ >= MAX_RIGHE_LISTA) break
+                    val x = voci.getJSONObject(i)
+                    val riga = RemoteViews(c.packageName, R.layout.widget_riga_voce)
+                    riga.setTextViewText(R.id.riga_nome, x.optString("nome"))
+                    riga.setTextViewText(R.id.riga_quantita, x.optString("quantita"))
+                    val ingredienti = x.optJSONArray("ingredienti")
+                    if (ingredienti != null) {
+                        riga.setTextViewText(R.id.riga_ingredienti, (0 until ingredienti.length()).joinToString(", ") {
+                            val y = ingredienti.getJSONObject(it)
+                            "${y.optString("nome")} ${y.optString("quantita")}"
+                        })
+                        riga.setViewVisibility(R.id.riga_ingredienti, View.VISIBLE)
+                    }
+                    riga.setOnClickFillInIntent(R.id.riga_radice, Intent().putExtra(MainActivity.EXTRA_WIDGET, DatiWidget.queryAlimento(data, pasto, x.optString("id"))))
+                    b.addItem(x.optString("id").hashCode().toLong(), riga)
+                }
+            }
+            v.setRemoteAdapter(R.id.lista, b.build())
+            return v
+        }
+
+        fun disegna(c: Context) {
+            aggiornaTutti(c, WidgetPasti::class.java, RemoteViews(mapOf(SizeF(100f, 40f) to compatta(c), SizeF(100f, 100f) to lista(c))))
+        }
+    }
+}
+
+class WidgetPastiUno : AppWidgetProvider() {
+    override fun onUpdate(c: Context, m: AppWidgetManager, ids: IntArray) {
+        disegna(c)
+        DatiWidget.chiediAggiornamento(c)
+    }
+
+    companion object {
+        fun disegna(c: Context) {
+            val v = RemoteViews(c.packageName, R.layout.widget_uno)
+            val prossimo = DatiWidget.prossimiPasti(c, 1).firstOrNull()
+            v.setImageViewResource(R.id.uno_icona, R.drawable.ic_widget_pasti)
+            v.setTextViewText(R.id.uno_testo, if (prossimo != null) DatiWidget.nomePasto(prossimo.optString("pasto")) else "—")
+            v.setOnClickPendingIntent(R.id.uno_radice, if (DatiWidget.collegato(c)) apriFinestra(c, 7030, FinestraPasti::class.java) else apriNormale(c, 7031))
+            aggiornaTutti(c, WidgetPastiUno::class.java, v)
         }
     }
 }

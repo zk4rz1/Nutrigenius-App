@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="7dp">
+    <LinearLayout android:id="@+id/riga_radice" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/widget_testa_pasto" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="8dp" android:paddingTop="4dp" android:paddingEnd="8dp" android:paddingBottom="4dp">
+        <TextView android:id="@+id/riga_nome" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="#4F46E5" android:textSize="13sp" android:textStyle="bold" android:maxLines="1" />
+        <TextView android:id="@+id/riga_giorno" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#64748B" android:textSize="12sp" android:maxLines="1" />
+    </LinearLayout>
+</FrameLayout>

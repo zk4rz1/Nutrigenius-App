@@ -101,8 +101,58 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_pasti_info" />
         </receiver>
+        <receiver android:name=".WidgetAcquaUno" android:exported="false" android:label="@string/widget_acqua_uno_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_acqua_uno_info" />
+        </receiver>
+        <receiver android:name=".WidgetAcquaDue" android:exported="false" android:label="@string/widget_acqua_due_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_acqua_due_info" />
+        </receiver>
+        <receiver android:name=".WidgetSpesaUno" android:exported="false" android:label="@string/widget_spesa_uno_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_spesa_uno_info" />
+        </receiver>
+        <receiver android:name=".WidgetPastiUno" android:exported="false" android:label="@string/widget_pasti_uno_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_pasti_uno_info" />
+        </receiver>
+        <activity
+            android:name=".ConfermaAcqua"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NutriGeniusBridge.Finestra" />
+        <activity
+            android:name=".ScegliAcqua"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NutriGeniusBridge.Finestra" />
+        <activity
+            android:name=".ConfiguraAcquaUno"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.NutriGeniusBridge.Finestra">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".FinestraSpesa"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"

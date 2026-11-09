@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_sfondo"
+    android:orientation="vertical"
+    android:padding="6dp">
+    <LinearLayout android:id="@+id/acqua_totale" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal" android:contentDescription="Apri il dettaglio dell'acqua">
+        <ImageView android:layout_width="13dp" android:layout_height="13dp" android:src="@drawable/ic_widget_goccia" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/acqua_testo" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="3dp" android:textColor="#1E293B" android:textSize="11sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+    <ProgressBar android:id="@+id/acqua_livello" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="5dp" android:layout_marginTop="2dp" android:indeterminate="false" android:max="100" android:progress="0" android:progressDrawable="@drawable/widget_barra" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_marginTop="3dp" android:layout_weight="1" android:orientation="horizontal">
+        <LinearLayout android:id="@+id/due_aggiungi" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2" android:background="@drawable/widget_pulsante" android:gravity="center" android:orientation="horizontal" android:contentDescription="Aggiungi">
+            <ImageView android:id="@+id/due_icona" android:layout_width="17dp" android:layout_height="17dp" android:src="@drawable/ic_widget_bicchiere" android:importantForAccessibility="no" />
+            <TextView android:id="@+id/due_ml" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="—" android:textColor="#1E293B" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/due_scegli" android:layout_width="0dp" android:layout_height="match_parent" android:layout_marginStart="4dp" android:layout_weight="1" android:background="@drawable/widget_pulsante" android:gravity="center" android:orientation="horizontal" android:contentDescription="Seleziona la quantità">
+            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_widget_freccia" android:importantForAccessibility="no" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

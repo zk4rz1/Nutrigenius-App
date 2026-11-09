@@ -7,6 +7,16 @@
     <string name="widget_spesa_nome">Lista della spesa</string>
     <string name="widget_pasti_nome">Prossimi pasti</string>
     <string name="widget_acqua_descrizione">Il livello dell\'acqua di oggi e tre pulsanti per segnare quello che bevi</string>
-    <string name="widget_spesa_descrizione">Apre la lista della spesa in una finestra flottante</string>
-    <string name="widget_pasti_descrizione">Apre i prossimi 4 pasti in una finestra flottante</string>
+    <string name="widget_spesa_descrizione">La lista da spuntare: allungalo per vederla qui, toccando il titolo si apre con quantità e scadenze</string>
+    <string name="widget_pasti_descrizione">I prossimi 4 pasti: allungalo per vederli qui, toccando il titolo si aprono in una finestra</string>
+    <string name="widget_acqua_uno_nome">Acqua 1x1</string>
+    <string name="widget_acqua_due_nome">Acqua 2x1</string>
+    <string name="widget_spesa_uno_nome">Lista della spesa 1x1</string>
+    <string name="widget_pasti_uno_nome">Prossimi pasti 1x1</string>
+    <string name="widget_acqua_uno_descrizione">Un pulsante a scelta per segnare l\'acqua, con conferma se la vuoi</string>
+    <string name="widget_acqua_due_descrizione">Aggiungi e scegli la quantità del prossimo aggiungi</string>
+    <string name="widget_spesa_uno_descrizione">Quanti prodotti restano da comprare; apre la lista</string>
+    <string name="widget_pasti_uno_descrizione">Il prossimo pasto; apre i prossimi 4</string>
+    <string name="scorciatoia_spesa_breve">Lista della spesa</string>
+    <string name="scorciatoia_pasti_breve">Prossimi pasti</string>
 </resources>

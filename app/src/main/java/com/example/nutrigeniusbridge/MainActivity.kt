@@ -600,7 +600,16 @@ class MainActivity : ComponentActivity() {
                     putExtra(EXTRA_AZIONE, AZIONE_IMPOSTAZIONI)
                 })
                 .build()
-            androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, listOf(scorciatoia, impostazioni))
+            val finestra = { id: String, breve: Int, icona: Int, classe: Class<*> ->
+                androidx.core.content.pm.ShortcutInfoCompat.Builder(this, id)
+                    .setShortLabel(getString(breve))
+                    .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, icona))
+                    .setIntent(android.content.Intent(this, classe).setAction(android.content.Intent.ACTION_VIEW))
+                    .build()
+            }
+            val spesa = finestra("spesa", R.string.scorciatoia_spesa_breve, R.drawable.ic_widget_spesa, FinestraSpesa::class.java)
+            val pasti = finestra("pasti", R.string.scorciatoia_pasti_breve, R.drawable.ic_widget_pasti, FinestraPasti::class.java)
+            androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, listOf(spesa, pasti, scorciatoia, impostazioni))
         } catch (e: Exception) {
             errorManager.logError("Scorciatoia non registrata", e.stackTraceToString(), "AndroidNative", false)
         }

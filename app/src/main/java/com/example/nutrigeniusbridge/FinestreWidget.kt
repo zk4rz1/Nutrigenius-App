@@ -78,10 +78,18 @@ abstract class FinestraWidget : Activity() {
         ridisegna()
     }
 
+    /** Se si sta scrivendo qualcosa i dati nuovi aspettano: non si perde il lavoro. */
+    protected open fun puoRidisegnare() = true
+
     private fun ridisegna() {
         val il = DatiWidget.sp(this).getLong(DatiWidget.CHIAVE_IL, 0L)
-        if (il == ultimi) return
+        if (il == ultimi || !puoRidisegnare()) return
         ultimi = il
+        ricomponi()
+    }
+
+    protected fun ricomponi() {
+        val il = DatiWidget.sp(this).getLong(DatiWidget.CHIAVE_IL, 0L)
         contenuto.removeAllViews()
         riempi(contenuto)
         aggiornato.text = if (il > 0) "Aggiornato alle ${SimpleDateFormat("HH:mm", Locale.ITALIAN).format(Date(il))}" else ""
@@ -89,6 +97,7 @@ abstract class FinestraWidget : Activity() {
 
     override fun onStart() {
         super.onStart()
+        DatiWidget.segnaFinestraUsata(this)
         DatiWidget.sp(this).registerOnSharedPreferenceChangeListener(ascolto)
         DatiWidget.chiediAggiornamento(applicationContext)
     }
@@ -114,41 +123,8 @@ abstract class FinestraWidget : Activity() {
         const val GRIGIO = 0xFF64748B.toInt()
         const val VERDE = 0xFF059669.toInt()
         const val INDACO = 0xFF4F46E5.toInt()
-    }
-}
-
-/** La lista della spesa, con le stesse parti e le stesse quantità dell'app. */
-class FinestraSpesa : FinestraWidget() {
-    override val titolo = "Lista della spesa"
-
-    override fun riempi(contenuto: LinearLayout) {
-        val s = DatiWidget.spesa(this)
-        val sezioni = s?.optJSONArray("sezioni")
-        if (s == null || sezioni == null) {
-            vuoto(contenuto, "La lista non è ancora disponibile: apri NutriGenius e scegli il menu della lista.")
-            return
-        }
-        s.optString("periodo").takeIf { it.isNotEmpty() }?.let { contenuto.addView(testo(it, 12f, GRIGIO)) }
-        for (i in 0 until sezioni.length()) {
-            val sez = sezioni.getJSONObject(i)
-            val righe = sez.optJSONArray("righe")
-            val quante = righe?.length() ?: 0
-            if (quante == 0 && i > 0) continue
-            contenuto.addView(testo("${sez.optString("titolo").uppercase(Locale.ITALIAN)}${if (quante > 0) " ($quante)" else ""}", 12f, GRIGIO, true).apply { setPadding(0, dp(12), 0, dp(4)) })
-            if (quante == 0) {
-                contenuto.addView(testo("Niente da comprare per i pasti di questi giorni.", 13f, GRIGIO))
-                continue
-            }
-            for (n in 0 until quante) contenuto.addView(riga(righe!!.getJSONObject(n)))
-        }
-    }
-
-    private fun riga(r: JSONObject): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(0, dp(5), 0, dp(5))
-        val fatto = r.optBoolean("fatto")
-        addView(testo(if (fatto) "✓ ${r.optString("nome")}" else r.optString("nome"), 15f, if (fatto) VERDE else TESTO, true))
-        addView(testo(r.optString("dettaglio"), 12.5f, GRIGIO))
+        const val AMBRA = 0xFFB45309.toInt()
+        const val AZZURRO = 0xFF0284C7.toInt()
     }
 }
 
