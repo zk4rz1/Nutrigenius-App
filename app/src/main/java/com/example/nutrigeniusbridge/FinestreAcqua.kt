@@ -20,6 +20,7 @@ object ConfAcqua {
     fun conferma(c: Context, id: Int): Boolean = sp(c).getBoolean("conferma_$id", false)
     fun imposta(c: Context, id: Int, tipo: String, conferma: Boolean) = sp(c).edit().putString("tipo_$id", tipo).putBoolean("conferma_$id", conferma).apply()
     fun scegli(c: Context, id: Int, tipo: String) = sp(c).edit().putString("tipo_$id", tipo).apply()
+    fun configurato(c: Context, id: Int) = sp(c).contains("tipo_$id")
     fun togli(c: Context, ids: IntArray) {
         val e = sp(c).edit()
         for (id in ids) e.remove("tipo_$id").remove("conferma_$id")
@@ -110,6 +111,11 @@ class ConfiguraAcquaUno : FinestraBreve() {
         }
         r.addView(conferma)
         val azioni = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        // La voce del tocco prolungato: da qui, a widget già messo, si apre anche il menu rapido.
+        if (ConfAcqua.configurato(this, id)) azioni.addView(bottone("Menu rapido", FinestraWidget.INDACO) {
+            startActivity(Intent(this, MenuRapido::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+        })
         azioni.addView(bottone("Annulla", FinestraWidget.GRIGIO) { finish() })
         azioni.addView(bottone("Salva", FinestraWidget.VERDE) {
             ConfAcqua.imposta(this, id, mappa[gruppo.checkedRadioButtonId] ?: "glass", conferma.isChecked)

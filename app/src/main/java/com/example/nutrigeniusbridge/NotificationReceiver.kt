@@ -7,7 +7,20 @@ import android.content.Intent
 class NotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra("title") ?: "NutriGenius"
-        val body = intent.getStringExtra("body") ?: ""
+        var body = intent.getStringExtra("body") ?: ""
+
+        // Il promemoria è stato programmato dalla pagina con l'acqua di allora: nel frattempo
+        // dai widget si può aver bevuto (#158). Si rifà il conto con i dati di adesso.
+        when (val esito = PromemoriaAcqua.controlla(context)) {
+            is PromemoriaAcqua.Esito.Niente -> return
+            is PromemoriaAcqua.Esito.Dopo -> {
+                programma(context, title, esito.body, esito.fra)
+                return
+            }
+            is PromemoriaAcqua.Esito.Adesso -> body = esito.body
+            null -> {}
+        }
+
         
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         val channelId = "water_reminders"
@@ -29,5 +42,17 @@ class NotificationReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             
         notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
+    }
+
+    companion object {
+        /** Riprogramma il promemoria: lo stesso allarme che la pagina può annullare o sostituire. */
+        fun programma(c: Context, title: String, body: String, fra: Long) {
+            val i = Intent(c, NotificationReceiver::class.java).putExtra("title", title).putExtra("body", body)
+            val pi = android.app.PendingIntent.getBroadcast(c, 0, i, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            val am = c.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            val quando = System.currentTimeMillis() + maxOf(1000L, fra)
+            if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, quando, pi)
+            else am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, quando, pi)
+        }
     }
 }

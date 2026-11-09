@@ -19,4 +19,6 @@
     <string name="widget_pasti_uno_descrizione">Il prossimo pasto; apre i prossimi 4</string>
     <string name="scorciatoia_spesa_breve">Lista della spesa</string>
     <string name="scorciatoia_pasti_breve">Prossimi pasti</string>
+    <string name="widget_icona_nome">NutriGenius rapido</string>
+    <string name="widget_icona_descrizione">Come l\'icona dell\'app: apre un menu rapido con app, spesa, pasti e acqua</string>
 </resources>

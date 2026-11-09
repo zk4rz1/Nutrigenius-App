@@ -9,4 +9,6 @@
     android:targetCellHeight="1"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
+    android:configure="com.example.nutrigeniusbridge.MenuRapido"
+    android:widgetFeatures="reconfigurable|configuration_optional"
     android:widgetCategory="home_screen" />

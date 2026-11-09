@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.nutrigeniusbridge"
         minSdk = 34
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.7.0"
+        versionCode = 13
+        versionName = "1.8.0"
         // L'app web di produzione, su ServeJS (si cambia dalle impostazioni dell'app, senza ricompilare).
         buildConfigField("String", "WEBAPP_URL", "\"https://nutrigenius.casascoiattolo.com/\"")
         // Da dove l'APK si aggiorna da sé (Aggiornamenti.kt).

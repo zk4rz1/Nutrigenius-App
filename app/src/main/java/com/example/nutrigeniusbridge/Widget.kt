@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -48,6 +49,7 @@ object DatiWidget {
     private const val LAVORO_INVIO = "widget-invio"
     private const val LAVORO_AGGIORNA = "widget-aggiorna"
     private const val MAX_CODA = 200
+    private val MARCHE = intArrayOf(R.id.marca_0, R.id.marca_1, R.id.marca_2, R.id.marca_3, R.id.marca_4, R.id.marca_5, R.id.marca_6, R.id.marca_7, R.id.marca_8, R.id.marca_9, R.id.marca_10, R.id.marca_11, R.id.marca_12, R.id.marca_13, R.id.marca_14, R.id.marca_15, R.id.marca_16, R.id.marca_17, R.id.marca_18, R.id.marca_19, R.id.marca_20)
     /** Chi usa le finestre solo dal menu dell'icona ha i dati aggiornati per un mese dall'ultima volta. */
     private const val FINESTRA_VALE_MS = 30 * 86_400_000L
     /** Aprendo una finestra si chiede l'aggiornamento al server, ma non più spesso di così. */
@@ -65,6 +67,7 @@ object DatiWidget {
     private val provider = listOf(
         WidgetAcqua::class.java, WidgetAcquaUno::class.java, WidgetAcquaDue::class.java,
         WidgetSpesa::class.java, WidgetSpesaUno::class.java, WidgetPasti::class.java, WidgetPastiUno::class.java,
+        WidgetIcona::class.java,
     )
 
     /** C'è almeno un widget, o si usano le finestre dal menu dell'icona? Senza, non si calcola e non si scarica niente. */
@@ -80,6 +83,24 @@ object DatiWidget {
         WidgetAcqua.disegna(c)
         WidgetAcquaUno.disegna(c)
         WidgetAcquaDue.disegna(c)
+    }
+
+    /** Mette i dati sulla barra: livello, triangolino e colore (rosso se sei indietro, come nell'app). */
+    fun livello(v: RemoteViews, a: Acqua) {
+        val massimo = maxOf(a.target, 1)
+        v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
+        val atteso = a.atteso()
+        v.setColorStateList(R.id.acqua_livello, "setProgressTintList", ColorStateList.valueOf(Color.parseColor(when {
+            a.ml >= massimo -> "#10B981"
+            atteso != null && a.ml < atteso -> "#F87171"
+            else -> "#3B82F6"
+        })))
+        if (atteso != null) v.setViewVisibility(MARCHE[Math.round(atteso / massimo * (MARCHE.size - 1)).toInt().coerceIn(0, MARCHE.size - 1)], View.VISIBLE)
+    }
+
+    fun badge(v: RemoteViews, id: Int, n: Int) {
+        v.setTextViewText(id, "$n")
+        v.setViewVisibility(id, if (n > 0) View.VISIBLE else View.GONE)
     }
 
     fun ridisegnaSpesa(c: Context) {
@@ -189,21 +210,79 @@ object DatiWidget {
         return (0 until a.length()).map { a.getJSONObject(it) }.filter { it.optLong("fine") > ora }.take(quanti)
     }
 
-    data class Acqua(val attiva: Boolean, val ml: Int, val target: Int, val glass: Int, val flask: Int, val bottle: Int)
+    data class Acqua(
+        val attiva: Boolean, val ml: Int, val target: Int, val glass: Int, val flask: Int, val bottle: Int,
+        val usatoGlass: Int, val usatoFlask: Int, val usatoBottle: Int,
+        val gestisci: Boolean, val inizio: String?, val fine: String?,
+        /** Dati con il livello atteso: quelli della 1.7.0 non l'hanno. */
+        val completa: Boolean,
+    ) {
+        fun misura(t: String) = when (t) { "bottle" -> bottle; "flask" -> flask; else -> glass }
+        fun usato(t: String) = when (t) { "bottle" -> usatoBottle; "flask" -> usatoFlask; else -> usatoGlass }
+        /** Le porzioni di quel contenitore bevute oggi, come sulla tendina dell'app. */
+        fun porzioni(t: String): Int = if (misura(t) > 0) Math.round(usato(t).toDouble() / misura(t)).toInt() else 0
+
+        private fun minuti(s: String?, predefinito: String): Int {
+            val p = (s?.takeIf { it.isNotEmpty() } ?: predefinito).split(":")
+            return (p.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (p.getOrNull(1)?.toIntOrNull() ?: 0)
+        }
+
+        /** Quanto dovresti aver bevuto adesso, come il triangolino dell'app; null se non è attivo. */
+        fun atteso(): Double? {
+            if (!gestisci || target <= 0) return null
+            val ora = LocalTime.now()
+            val adesso = ora.hour * 60 + ora.minute
+            val i = minuti(inizio, "08:00")
+            val f = minuti(fine, "22:00")
+            return when {
+                adesso >= f -> target.toDouble()
+                adesso <= i -> 0.0
+                else -> target.toDouble() * (adesso - i) / (f - i)
+            }
+        }
+
+        /** Le fasce del promemoria: quelle predefinite non sono le stesse del triangolino, come nell'app. */
+        fun inizioMs() = minuti(inizio, "8:00") * 60_000L
+        fun fineMs() = minuti(fine, "20:00") * 60_000L
+    }
 
     /** L'acqua di oggi: quella dei dati, se sono di oggi, più le bevute non ancora inviate. */
     fun acqua(c: Context): Acqua? {
         val a = oggetto(c, "acqua") ?: return null
         val oggi = LocalDate.now().toString()
-        val base = if (a.optString("giorno") == oggi) a.optInt("ml") else 0
+        val diOggi = a.optString("giorno") == oggi
+        val base = if (diOggi) a.optInt("ml") else 0
+        val usati = if (diOggi) a.optJSONObject("usati") else null
         val coda = coda(c)
         var inCoda = 0
+        val perTipo = HashMap<String, Int>()
         for (i in 0 until coda.length()) {
             val b = coda.getJSONObject(i)
-            if (b.optString("at").startsWith(oggi)) inCoda += b.optInt("ml")
+            if (b.optString("at").startsWith(oggi)) {
+                inCoda += b.optInt("ml")
+                perTipo[b.optString("tipo")] = (perTipo[b.optString("tipo")] ?: 0) + b.optInt("ml")
+            }
         }
-        return Acqua(a.optBoolean("attiva"), base + inCoda, a.optInt("target", 2000), a.optInt("glass", 200), a.optInt("flask", 500), a.optInt("bottle", 1000))
+        fun usato(t: String) = (usati?.optInt(t) ?: 0) + (perTipo[t] ?: 0)
+        return Acqua(
+            a.optBoolean("attiva"), base + inCoda, a.optInt("target", 2000), a.optInt("glass", 200), a.optInt("flask", 500), a.optInt("bottle", 1000),
+            usato("glass"), usato("flask"), usato("bottle"),
+            a.optBoolean("gestisci"), a.optString("inizio").takeIf { a.has("inizio") && !a.isNull("inizio") }, a.optString("fine").takeIf { a.has("fine") && !a.isNull("fine") },
+            a.has("usati"),
+        )
     }
+
+    /** Il contenitore del menu rapido: l'ultimo bevuto o scelto, qui o nell'app. */
+    fun tipoRapido(c: Context): String {
+        val locale = sp(c).getString("rapido", null)
+        val il = sp(c).getLong("rapido_il", 0L)
+        val a = oggetto(c, "acqua")
+        val altrove = a?.takeIf { !it.isNull("ultimo") }?.optString("ultimo")?.takeIf { it.isNotEmpty() }
+        val ilAltrove = a?.optLong("ultimoIl") ?: 0L
+        return if (locale != null && (altrove == null || il >= ilAltrove)) locale else altrove ?: "glass"
+    }
+
+    fun scegliRapido(c: Context, tipo: String) = sp(c).edit().putString("rapido", tipo).putLong("rapido_il", System.currentTimeMillis()).apply()
 
     private fun coda(c: Context): JSONArray =
         runCatching { JSONArray(sp(c).getString("coda", "[]")) }.getOrElse { JSONArray() }
@@ -221,7 +300,7 @@ object DatiWidget {
             if (q.length() >= MAX_CODA) return
             val at = OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
             q.put(JSONObject().put("id", UUID.randomUUID().toString()).put("tipo", tipo).put("ml", ml).put("at", at))
-            sp(c).edit().putString("coda", q.toString()).commit()
+            sp(c).edit().putString("coda", q.toString()).putString("rapido", tipo).putLong("rapido_il", System.currentTimeMillis()).commit()
         }
         programmaInvio(c)
     }
@@ -298,6 +377,11 @@ object DatiWidget {
             oggetto(c, "acqua")?.let { a ->
                 a.put("giorno", r.optString("giorno", a.optString("giorno")))
                 a.put("ml", r.optInt("ml", a.optInt("ml")))
+                r.optJSONObject("usati")?.let { a.put("usati", it) }
+                if (r.has("ultimo")) {
+                    a.put("ultimo", r.opt("ultimo"))
+                    a.put("ultimoIl", r.optLong("ultimoIl"))
+                }
                 e.putString("acqua", a.toString())
             }
             e.commit()
@@ -394,9 +478,6 @@ private fun aggiornaTutti(c: Context, provider: Class<*>, viste: RemoteViews) {
     if (ids.isNotEmpty()) m.updateAppWidget(ids, viste)
 }
 
-private fun tinta(v: RemoteViews, raggiunto: Boolean) =
-    v.setColorStateList(R.id.acqua_livello, "setProgressTintList", ColorStateList.valueOf(Color.parseColor(if (raggiunto) "#10B981" else "#3B82F6")))
-
 private fun beviPi(c: Context, tipo: String): PendingIntent = PendingIntent.getBroadcast(
     c, 7010 + listOf("glass", "bottle", "flask").indexOf(tipo),
     Intent(c, WidgetAcqua::class.java).setAction(DatiWidget.AZIONE_BEVI).putExtra(DatiWidget.EXTRA_TIPO, tipo),
@@ -425,10 +506,9 @@ class WidgetAcquaUno : AppWidgetProvider() {
                     v.setProgressBar(R.id.acqua_livello, 100, 0, false)
                     v.setOnClickPendingIntent(R.id.uno_radice, apriNormale(c, 7300 + id))
                 } else {
-                    val massimo = maxOf(a.target, 1)
                     v.setTextViewText(R.id.uno_testo, "${a.ml}")
-                    v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
-                    tinta(v, a.ml >= massimo)
+                    DatiWidget.livello(v, a)
+                    DatiWidget.badge(v, R.id.uno_badge, a.porzioni(tipo))
                     v.setOnClickPendingIntent(R.id.uno_radice, if (ConfAcqua.conferma(c, id)) PendingIntent.getActivity(
                         c, 7300 + id, Intent(c, ConfermaAcqua::class.java).putExtra(DatiWidget.EXTRA_TIPO, tipo).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -466,11 +546,10 @@ class WidgetAcquaDue : AppWidgetProvider() {
                     v.setOnClickPendingIntent(R.id.due_aggiungi, apri)
                     v.setOnClickPendingIntent(R.id.due_scegli, apri)
                 } else {
-                    val massimo = maxOf(a.target, 1)
                     v.setTextViewText(R.id.acqua_testo, "${a.ml} / ${a.target} ml")
                     v.setTextViewText(R.id.due_ml, "+${ConfAcqua.ml(a, tipo)}")
-                    v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
-                    tinta(v, a.ml >= massimo)
+                    DatiWidget.livello(v, a)
+                    DatiWidget.badge(v, R.id.due_badge, a.porzioni(tipo))
                     v.setOnClickPendingIntent(R.id.acqua_totale, apriApp(c, 7001, "widget=acqua"))
                     v.setOnClickPendingIntent(R.id.due_aggiungi, beviPi(c, tipo))
                     v.setOnClickPendingIntent(R.id.due_scegli, PendingIntent.getActivity(
@@ -521,11 +600,12 @@ class WidgetAcqua : AppWidgetProvider() {
                 }
             } else {
                 val massimo = maxOf(a.target, 1)
-                val raggiunto = a.ml >= massimo
                 v.setTextViewText(R.id.acqua_testo, "${a.ml} / ${a.target} ml")
                 v.setTextViewText(R.id.acqua_percento, "${a.ml * 100 / massimo}%")
-                v.setProgressBar(R.id.acqua_livello, massimo, minOf(a.ml, massimo), false)
-                tinta(v, raggiunto)
+                DatiWidget.livello(v, a)
+                DatiWidget.badge(v, R.id.acqua_glass_badge, a.porzioni("glass"))
+                DatiWidget.badge(v, R.id.acqua_bottle_badge, a.porzioni("bottle"))
+                DatiWidget.badge(v, R.id.acqua_flask_badge, a.porzioni("flask"))
                 v.setOnClickPendingIntent(R.id.acqua_totale, apriApp(c, 7001, "widget=acqua"))
                 CONTENITORI.forEach { (tipo, bottone, testo) ->
                     v.setOnClickPendingIntent(bottone, beviPi(c, tipo))
