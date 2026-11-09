@@ -36,7 +36,8 @@ import java.util.concurrent.TimeUnit
  *   chiave del dispositivo sta nella WebView. La pagina passa un gettone che serve solo
  *   a leggere gli avvisi del proprio account. Dalla 1.4.0 arrivano subito con Firebase
  *   Cloud Messaging (Fcm.kt: il token si registra con quel gettone); WorkManager li
- *   chiede comunque ogni 15 minuti (il minimo di Android), come rete di sicurezza;
+ *   chiede comunque ogni 15 minuti (il minimo di Android), come rete di sicurezza.
+ *   Dalla 1.6.0 con lo stesso gettone si leggono e si segnano i dati dei widget (Widget.kt);
  * - **chi usa l'app**: utente e spazio aperto. Connessione Salute si legge solo per il
  *   suo proprietario (il primo utente che la usa nel proprio spazio), mai nello spazio
  *   di un altro.
@@ -74,6 +75,14 @@ class PonteApk(private val c: Context, private val webView: WebView) {
         }
     }
 
+    /** C'è un widget sulla schermata Home? La pagina prepara i dati solo in quel caso (1.6.0). */
+    @JavascriptInterface
+    fun widgetPresenti(): Boolean = DatiWidget.presenti(c)
+
+    /** I dati dei widget già pronti, calcolati dalla pagina. */
+    @JavascriptInterface
+    fun widgetDati(json: String) = DatiWidget.daPagina(c, json)
+
     @JavascriptInterface
     fun utente(json: String) {
         val o = runCatching { JSONObject(json) }.getOrElse { JSONObject() }
@@ -94,11 +103,21 @@ object Avvisi {
         // Un gettone nuovo: il token FCM va registrato di nuovo con lui.
         if (prima != gettone) sp(c).edit().remove("fcm_registrato").apply()
         programma(c, ExistingPeriodicWorkPolicy.UPDATE)
+        if (DatiWidget.presenti(c)) DatiWidget.chiediAggiornamento(c)
+    }
+
+    /** Server e gettone, per i widget; null se l'app non è collegata a un account. */
+    fun credenziali(c: Context): Pair<String, String>? {
+        val s = sp(c)
+        val server = s.getString("server", null) ?: return null
+        val gettone = s.getString("gettone", null)?.takeIf { it.isNotEmpty() } ?: return null
+        return server to gettone
     }
 
     fun spegni(c: Context) {
         sp(c).edit().clear().apply()
         WorkManager.getInstance(c).cancelUniqueWork(LAVORO)
+        DatiWidget.azzera(c)
     }
 
     /** Lo stato per la pagina: mai il gettone. */
@@ -149,7 +168,7 @@ object Avvisi {
         (c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(idNotifica(tipo, 0L))
     }
 
-    private fun chiama(server: String, corpo: String): Pair<Int, String> {
+    fun chiama(server: String, corpo: String): Pair<Int, String> {
         val con = (URL(server).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 30_000
@@ -218,6 +237,13 @@ object Avvisi {
 class ControlloAvvisi(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     override suspend fun doWork(): Result {
         runCatching { Avvisi.controlla(applicationContext) }
+        // I widget: prima le bevute in coda, poi i dati del server; il disegno rifà anche il giorno nuovo.
+        val c = applicationContext
+        if (DatiWidget.presenti(c)) {
+            runCatching { DatiWidget.invia(c) }
+            runCatching { DatiWidget.aggiorna(c) }
+            DatiWidget.ridisegna(c)
+        }
         return Result.success()
     }
 }
@@ -233,6 +259,9 @@ object Salute {
         utente = u
         spazio = s
     }
+
+    /** I dati dei widget vengono solo dal proprio spazio, mai da quello di un delegante. */
+    fun nelProprioSpazio(): Boolean = utente != 0L && spazio == utente
 
     /** Il proprietario dei dati di Connessione Salute su questo telefono (0: nessuno). */
     fun proprietario(c: Context): Long = sp(c).getLong("proprietario", 0L)

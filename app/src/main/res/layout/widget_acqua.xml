@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_sfondo"
+    android:orientation="vertical"
+    android:padding="10dp">
+    <LinearLayout
+        android:id="@+id/acqua_totale"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:contentDescription="Apri il dettaglio dell'acqua">
+        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_widget_goccia" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/acqua_testo" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="6dp" android:text="Acqua" android:textColor="#1E293B" android:textSize="15sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/acqua_percento" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#2563EB" android:textSize="14sp" android:textStyle="bold" android:maxLines="1" />
+    </LinearLayout>
+    <ProgressBar
+        android:id="@+id/acqua_livello"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:layout_marginTop="6dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progress="0"
+        android:progressDrawable="@drawable/widget_barra" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/acqua_glass"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/widget_pulsante"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:contentDescription="Aggiungi Bicchiere">
+            <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_widget_bicchiere" android:importantForAccessibility="no" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Bicchiere" android:textColor="#475569" android:textSize="11sp" android:maxLines="1" />
+            <TextView android:id="@+id/acqua_glass_ml" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textColor="#1E293B" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/acqua_bottle"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginStart="6dp"
+            android:background="@drawable/widget_pulsante"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:contentDescription="Aggiungi Bottiglia">
+            <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_widget_bottiglia" android:importantForAccessibility="no" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Bottiglia" android:textColor="#475569" android:textSize="11sp" android:maxLines="1" />
+            <TextView android:id="@+id/acqua_bottle_ml" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textColor="#1E293B" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/acqua_flask"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginStart="6dp"
+            android:background="@drawable/widget_pulsante"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:contentDescription="Aggiungi Borraccia">
+            <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_widget_borraccia" android:importantForAccessibility="no" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Borraccia" android:textColor="#475569" android:textSize="11sp" android:maxLines="1" />
+            <TextView android:id="@+id/acqua_flask_ml" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="—" android:textColor="#1E293B" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

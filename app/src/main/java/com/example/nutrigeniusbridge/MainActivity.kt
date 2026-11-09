@@ -23,6 +23,9 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_AZIONE = "azione"
         const val AZIONE_SCATTA = "scatta"
         const val AZIONE_IMPOSTAZIONI = "impostazioni"
+        /** Dai widget: l'extra EXTRA_WIDGET porta la richiesta per la pagina («widget=acqua», …). */
+        const val AZIONE_WIDGET = "widget"
+        const val EXTRA_WIDGET = "widget_query"
         private const val ID_SCORCIATOIA_SCATTA = "scatta"
         private const val ID_SCORCIATOIA_IMPOSTAZIONI = "impostazioni"
     }
@@ -478,7 +481,8 @@ class MainActivity : ComponentActivity() {
 
         // Load the PWA: dalla scorciatoia «Scatta foto» parte direttamente con
         // la fotocamera (la PWA riconosce ?scatta=1 come la sua scorciatoia).
-        webView.loadUrl(if (chiedeScatto(intent)) "$indirizzo?scatta=1" else indirizzo)
+        val dalWidget = queryWidget(intent)
+        webView.loadUrl(if (chiedeScatto(intent)) "$indirizzo?scatta=1" else if (dalWidget != null) "$indirizzo?$dalWidget" else indirizzo)
         if (chiedeImpostazioni(intent)) mostraImpostazioni()
     }
 
@@ -605,12 +609,31 @@ class MainActivity : ComponentActivity() {
     private fun chiedeScatto(intent: android.content.Intent?): Boolean =
         intent?.getStringExtra(EXTRA_AZIONE) == AZIONE_SCATTA
 
+    private fun queryWidget(intent: android.content.Intent?): String? =
+        if (intent?.getStringExtra(EXTRA_AZIONE) == AZIONE_WIDGET) intent.getStringExtra(EXTRA_WIDGET) else null
+
+    /** Ad app aperta basta dirlo alla pagina; una versione che non lo sa ricarica con i parametri. */
+    private fun apriDaWidget(query: String) {
+        if (!paginaCaricata) {
+            webView.loadUrl("$indirizzo?$query")
+            return
+        }
+        val q = org.json.JSONObject.quote(query)
+        webView.evaluateJavascript("(function(){ return window.__nutrigeniusWidget ? window.__nutrigeniusWidget($q) : 'no'; })()") { esito ->
+            if (esito != "\"ok\"") webView.loadUrl("$indirizzo?$query")
+        }
+    }
+
     /** L'app era già aperta: alla PWA basta un evento, senza ricaricare la pagina. */
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (chiedeImpostazioni(intent)) {
             mostraImpostazioni()
+            return
+        }
+        queryWidget(intent)?.let {
+            apriDaWidget(it)
             return
         }
         if (!chiedeScatto(intent)) return

@@ -3,4 +3,10 @@
     <string name="scorciatoia_scatta_lunga">Scatta foto per l\'assistente</string>
     <string name="scorciatoia_impostazioni_breve">Impostazioni</string>
     <string name="scorciatoia_impostazioni_lunga">Impostazioni dell\'app</string>
+    <string name="widget_acqua_nome">Acqua</string>
+    <string name="widget_spesa_nome">Lista della spesa</string>
+    <string name="widget_pasti_nome">Prossimi pasti</string>
+    <string name="widget_acqua_descrizione">Il livello dell\'acqua di oggi e tre pulsanti per segnare quello che bevi</string>
+    <string name="widget_spesa_descrizione">Apre la lista della spesa in una finestra flottante</string>
+    <string name="widget_pasti_descrizione">Apre i prossimi 4 pasti in una finestra flottante</string>
 </resources>

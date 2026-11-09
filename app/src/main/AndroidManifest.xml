@@ -82,6 +82,42 @@
         <receiver android:name=".NotificationReceiver" android:exported="false" />
         <receiver android:name=".EsitoInstallazione" android:exported="false" />
 
+        <!-- I widget della schermata Home e le loro finestre flottanti (Widget.kt, FinestreWidget.kt). -->
+        <receiver android:name=".WidgetAcqua" android:exported="false" android:label="@string/widget_acqua_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_acqua_info" />
+        </receiver>
+        <receiver android:name=".WidgetSpesa" android:exported="false" android:label="@string/widget_spesa_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_spesa_info" />
+        </receiver>
+        <receiver android:name=".WidgetPasti" android:exported="false" android:label="@string/widget_pasti_nome">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_pasti_info" />
+        </receiver>
+        <activity
+            android:name=".FinestraSpesa"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NutriGeniusBridge.Finestra" />
+        <activity
+            android:name=".FinestraPasti"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NutriGeniusBridge.Finestra" />
+
         <!-- Gli avvisi del server con Firebase Cloud Messaging (Fcm.kt). -->
         <service
             android:name=".MessaggiFcm"

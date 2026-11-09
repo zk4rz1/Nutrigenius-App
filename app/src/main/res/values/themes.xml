@@ -4,4 +4,13 @@
     <style name="Theme.NutriGeniusBridge" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">#6366f1</item>
     </style>
+
+    <!-- Le finestre flottanti dei widget: nessuna animazione, si chiudono toccando fuori. -->
+    <style name="Theme.NutriGeniusBridge.Finestra" parent="android:Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:windowBackground">@drawable/widget_finestra</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimAmount">0.4</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
 </resources>
