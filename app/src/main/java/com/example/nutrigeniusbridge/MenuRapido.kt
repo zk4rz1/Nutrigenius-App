@@ -142,7 +142,7 @@ class MenuRapido : FinestraBreve() {
         if (id != AppWidgetManager.INVALID_APPWIDGET_ID) setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))
         val r = radice().apply { setPadding(dp(12), dp(12), dp(12), dp(12)) }
         r.addView(riga(
-            voce(R.mipmap.ic_launcher_round, "NutriGenius") { apri(Intent(this, MainActivity::class.java)) },
+            voce(R.drawable.ic_widget_app, "NutriGenius") { apri(Intent(this, MainActivity::class.java)) },
             voce(R.drawable.ic_widget_allenamento, "Allenamento") { apri(Intent(Intent.ACTION_VIEW, Uri.parse(INDIRIZZO_ALLENAMENTO))) },
         ))
         r.addView(riga(

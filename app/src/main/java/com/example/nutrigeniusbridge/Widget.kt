@@ -48,6 +48,7 @@ object DatiWidget {
     private const val FILE = "widget"
     private const val LAVORO_INVIO = "widget-invio"
     private const val LAVORO_AGGIORNA = "widget-aggiorna"
+    private const val LAVORO_FINE_SPESA = "widget-fine-spesa"
     private const val MAX_CODA = 200
     private val MARCHE = intArrayOf(R.id.marca_0, R.id.marca_1, R.id.marca_2, R.id.marca_3, R.id.marca_4, R.id.marca_5, R.id.marca_6, R.id.marca_7, R.id.marca_8, R.id.marca_9, R.id.marca_10, R.id.marca_11, R.id.marca_12, R.id.marca_13, R.id.marca_14, R.id.marca_15, R.id.marca_16, R.id.marca_17, R.id.marca_18, R.id.marca_19, R.id.marca_20)
     /** Chi usa le finestre solo dal menu dell'icona ha i dati aggiornati per un mese dall'ultima volta. */
@@ -201,6 +202,16 @@ object DatiWidget {
         val carrello = r.optJSONObject("carrello")
         if (carrello != null) opSpesa(c, JSONObject().put("op", "togli").put("acquisto", carrello.optString("id")))
         else opSpesa(c, opMetti(r, false))
+        // Dal widget non c'è una finestra che si chiude: un minuto dopo l'ultima spunta (per poter
+        // rimediare a un tocco sbagliato) quello che è nel carrello passa in dispensa.
+        val lavoro = OneTimeWorkRequestBuilder<FineSpesaWidget>().setInitialDelay(60, TimeUnit.SECONDS).build()
+        WorkManager.getInstance(c).enqueueUniqueWork(LAVORO_FINE_SPESA, ExistingWorkPolicy.REPLACE, lavoro)
+    }
+
+    /** Il carrello passa in dispensa, come chiudendo la lista nell'app. */
+    fun chiudiCarrello(c: Context) {
+        val righe = spesa(c)?.optJSONArray("sezioni")?.optJSONObject(0)?.optJSONArray("righe") ?: return
+        if ((0 until righe.length()).any { righe.getJSONObject(it).has("carrello") }) opSpesa(c, JSONObject().put("op", "spesaFinita"))
     }
 
     /** I prossimi pasti: quelli già finiti escono da soli, anche se i dati sono di ore fa. */
@@ -449,6 +460,13 @@ object DatiWidget {
 
 class InvioWidget(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
     override suspend fun doWork(): Result = if (DatiWidget.invia(applicationContext)) Result.success() else Result.retry()
+}
+
+class FineSpesaWidget(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
+    override suspend fun doWork(): Result {
+        DatiWidget.chiudiCarrello(applicationContext)
+        return Result.success()
+    }
 }
 
 class AggiornaWidget(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {

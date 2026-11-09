@@ -164,7 +164,22 @@ object SpesaWidget {
             }
             "unita" -> ogniRiga(spesa) { _, r -> if (r.optString("foodId") == foodId) r.put("scelta", o.optString("unita")) }
             "spesaFinita" -> righe(spesa, 0)?.let { a ->
-                for (i in a.length() - 1 downTo 0) if (a.getJSONObject(i).has("carrello")) a.remove(i)
+                val acquistati = righe(spesa, 1)
+                for (i in a.length() - 1 downTo 0) {
+                    val r = a.getJSONObject(i)
+                    val c = r.optJSONObject("carrello") ?: continue
+                    val q = c.optDouble("quantita", 0.0)
+                    r.remove("carrello")
+                    r.remove("fatto")
+                    r.put("presente", r.optDouble("presente", 0.0) + q)
+                    r.put("daComprare", max(0.0, r.optDouble("daComprare", 0.0) - q))
+                    riga(spesa, 2, r.optString("foodId"))?.let { d -> d.put("presente", d.optDouble("presente", 0.0) + q) }
+                    // Comprato abbastanza: passa fra i già acquistati, come quando la lista si ricalcola.
+                    if (r.optDouble("daComprare", 0.0) <= 1e-9) {
+                        a.remove(i)
+                        if (r.optDouble("necessaria", 0.0) > 0) acquistati?.put(r)
+                    }
+                }
             }
         }
     }
@@ -181,7 +196,6 @@ class FinestraSpesa : FinestraWidget() {
     /** La lunga scadenza scelta prima della spunta (#92). */
     private val lungaPrima = HashSet<String>()
     private val viste = HashMap<String, LinearLayout>()
-    private var spesaFinita: View? = null
 
     private fun chiave(sezione: Int, foodId: String) = "$sezione|$foodId"
 
@@ -196,7 +210,6 @@ class FinestraSpesa : FinestraWidget() {
             return
         }
         s.optString("periodo").takeIf { it.isNotEmpty() }?.let { contenuto.addView(testo(it, 12f, GRIGIO)) }
-        var carrello = false
         for (i in 0 until sezioni.length()) {
             val sez = sezioni.getJSONObject(i)
             val righe = sez.optJSONArray("righe")
@@ -208,7 +221,6 @@ class FinestraSpesa : FinestraWidget() {
                 contenuto.addView(testo("Niente da comprare per i pasti di questi giorni.", 13f, GRIGIO))
                 continue
             }
-            if (i == 0 && visibili.any { it.has("carrello") }) carrello = true
             for (r in visibili) {
                 val v = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
                 viste[chiave(i, r.optString("foodId"))] = v
@@ -216,23 +228,12 @@ class FinestraSpesa : FinestraWidget() {
                 contenuto.addView(v)
             }
         }
-        // C'è sempre: compare con la prima spunta, senza rifare tutta la lista.
-        val fine = pulsante("Spesa finita: metti il carrello in dispensa", VERDE, true) {
-            DatiWidget.opSpesa(this, JSONObject().put("op", "spesaFinita"))
-            aperto.clear()
-            ricomponi()
-        }.apply {
-            setPadding(0, dp(12), 0, dp(6))
-            visibility = if (carrello) View.VISIBLE else View.GONE
-        }
-        spesaFinita = fine
-        contenuto.addView(fine)
     }
 
-    private fun aggiornaSpesaFinita() {
-        val righe = DatiWidget.spesa(this)?.optJSONArray("sezioni")?.optJSONObject(0)?.optJSONArray("righe")
-        val c = righe != null && (0 until righe.length()).any { righe.getJSONObject(it).has("carrello") }
-        spesaFinita?.visibility = if (c) View.VISIBLE else View.GONE
+    /** Come chiudendo la lista nell'app: quello che è nel carrello passa in dispensa. */
+    override fun onStop() {
+        DatiWidget.chiudiCarrello(this)
+        super.onStop()
     }
 
     private fun ricomponiRiga(sezione: Int, foodId: String) {
@@ -269,7 +270,6 @@ class FinestraSpesa : FinestraWidget() {
             aperto[chiave(0, foodId)] = "editor"
         }
         ricomponiRiga(0, foodId)
-        aggiornaSpesaFinita()
     }
 
     private fun alterna(sezione: Int, foodId: String, pannello: String) {
@@ -383,13 +383,15 @@ class FinestraSpesa : FinestraWidget() {
         }
         val riga = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         riga.addView(testo("Aggiungi", 12.5f, GRIGIO))
-        riga.addView(aggiunta)
+        riga.addView(aggiunta, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         riga.addView(testo("Totale", 12.5f, GRIGIO).apply { setPadding(dp(8), 0, 0, 0) })
-        riga.addView(totale)
+        riga.addView(totale, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val rigaUnita = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        rigaUnita.addView(testo("Unità", 12.5f, GRIGIO).apply { setPadding(0, 0, dp(8), 0) })
         val nomi = r.optJSONArray("unita")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).optString("n") } } ?: listOf(u)
         if (nomi.size > 1) {
             val scelta = Spinner(this).apply {
-                adapter = ArrayAdapter(this@FinestraSpesa, android.R.layout.simple_spinner_dropdown_item, nomi)
+                adapter = ArrayAdapter(this@FinestraSpesa, android.R.layout.simple_spinner_item, nomi).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
                 setSelection(maxOf(0, nomi.indexOf(u)))
                 contentDescription = "Unità di $nome"
             }
@@ -409,11 +411,12 @@ class FinestraSpesa : FinestraWidget() {
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
-            riga.addView(scelta)
+            rigaUnita.addView(scelta, LinearLayout.LayoutParams(0, dp(44), 1f))
         } else {
-            riga.addView(testo(u, 13f, GRIGIO).apply { setPadding(dp(6), 0, 0, 0) })
+            rigaUnita.addView(testo(u, 13f, TESTO))
         }
         box.addView(riga)
+        box.addView(rigaUnita)
         if (dalVivo) return box
         val lunga = CheckBox(this).apply { text = "Lunga scadenza (quello che aggiungi)"; textSize = 12.5f }
         box.addView(lunga)
