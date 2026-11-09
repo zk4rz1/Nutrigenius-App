@@ -96,7 +96,16 @@ object DatiWidget {
             atteso != null && a.ml < atteso -> "#F87171"
             else -> "#3B82F6"
         })))
+        togliMarche(v)
         if (atteso != null) v.setViewVisibility(MARCHE[Math.round(atteso / massimo * (MARCHE.size - 1)).toInt().coerceIn(0, MARCHE.size - 1)], View.VISIBLE)
+    }
+
+    /**
+     * Il launcher riusa la vista del widget e applica solo le azioni di questo aggiornamento: non
+     * riparte dal layout. Quello che si è acceso una volta va spento esplicitamente (#161).
+     */
+    fun togliMarche(v: RemoteViews) {
+        for (id in MARCHE) v.setViewVisibility(id, View.INVISIBLE)
     }
 
     fun badge(v: RemoteViews, id: Int, n: Int) {
@@ -522,6 +531,7 @@ class WidgetAcquaUno : AppWidgetProvider() {
                 if (a == null || !a.attiva) {
                     v.setTextViewText(R.id.uno_testo, "—")
                     v.setProgressBar(R.id.acqua_livello, 100, 0, false)
+                    DatiWidget.togliMarche(v)
                     v.setOnClickPendingIntent(R.id.uno_radice, apriNormale(c, 7300 + id))
                 } else {
                     v.setTextViewText(R.id.uno_testo, "${a.ml}")
@@ -559,6 +569,7 @@ class WidgetAcquaDue : AppWidgetProvider() {
                     v.setTextViewText(R.id.acqua_testo, if (a == null) "Apri NutriGenius" else "Acqua non attiva")
                     v.setTextViewText(R.id.due_ml, "—")
                     v.setProgressBar(R.id.acqua_livello, 100, 0, false)
+                    DatiWidget.togliMarche(v)
                     val apri = apriNormale(c, 7400 + id)
                     v.setOnClickPendingIntent(R.id.acqua_totale, apri)
                     v.setOnClickPendingIntent(R.id.due_aggiungi, apri)
@@ -610,6 +621,7 @@ class WidgetAcqua : AppWidgetProvider() {
                 v.setTextViewText(R.id.acqua_testo, if (a == null) "Apri NutriGenius per collegare il widget" else "Acqua non attiva nelle impostazioni")
                 v.setTextViewText(R.id.acqua_percento, "")
                 v.setProgressBar(R.id.acqua_livello, 100, 0, false)
+                DatiWidget.togliMarche(v)
                 val apri = apriNormale(c, 7000)
                 v.setOnClickPendingIntent(R.id.acqua_totale, apri)
                 for ((_, bottone, testo) in CONTENITORI) {
@@ -788,6 +800,9 @@ class WidgetPasti : AppWidgetProvider() {
                             "${y.optString("nome")} ${y.optString("quantita")}"
                         })
                         riga.setViewVisibility(R.id.riga_ingredienti, View.VISIBLE)
+                    } else {
+                        // Le righe si riusano: una senza ingredienti non deve ereditare quelli di un'altra.
+                        riga.setViewVisibility(R.id.riga_ingredienti, View.GONE)
                     }
                     riga.setOnClickFillInIntent(R.id.riga_radice, Intent().putExtra(MainActivity.EXTRA_WIDGET, DatiWidget.queryAlimento(data, pasto, x.optString("id"))))
                     b.addItem(x.optString("id").hashCode().toLong(), riga)
